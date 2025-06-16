@@ -13,7 +13,6 @@ readme = "../README.md"
 rust-version.workspace = true
 
 [dependencies]
-pgwire = { workspace = true }
 datafusion = { workspace = true, default-features = true, features = ["avro"] }
 tokio = { workspace = true, features = ["full"] }
 datafusion-postgres = { path = "../datafusion-postgres", version = "0.6.1" }
