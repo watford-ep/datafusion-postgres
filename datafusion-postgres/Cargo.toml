@@ -10,6 +10,7 @@ homepage.workspace = true
 repository.workspace = true
 documentation.workspace = true
 readme = "../README.md"
+rust-version.workspace = true
 
 [dependencies]
 arrow-pg = { path = "../arrow-pg", version = "0.1.0" }
@@ -20,7 +21,7 @@ datafusion.workspace = true
 futures.workspace = true
 getset = "0.1"
 log = "0.4"
-pgwire.workspace = true
+pgwire = { workspace = true, features = ["server-api-ring", "scram"] }
 postgres-types.workspace = true
 rust_decimal.workspace = true
 tokio = { version = "1.45", features = ["sync", "net"] }

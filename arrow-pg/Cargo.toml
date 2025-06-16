@@ -10,12 +10,13 @@ homepage.workspace = true
 repository.workspace = true
 documentation.workspace = true
 readme = "../README.md"
+rust-version.workspace = true
 
 [dependencies]
 arrow.workspace = true
 bytes.workspace = true
 chrono.workspace = true
 futures.workspace = true
-pgwire.workspace = true
+pgwire = { workspace = true, features = ["server-api"] }
 postgres-types.workspace = true
 rust_decimal.workspace = true
