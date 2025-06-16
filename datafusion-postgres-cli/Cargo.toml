@@ -16,6 +16,6 @@ rust-version.workspace = true
 pgwire = { workspace = true }
 datafusion = { workspace = true, default-features = true, features = ["avro"] }
 tokio = { workspace = true, features = ["full"] }
-datafusion-postgres = { path = "../datafusion-postgres", version = "0.6.0" }
+datafusion-postgres = { path = "../datafusion-postgres", version = "0.6.1" }
 structopt = { version = "0.3", default-features = false }
 env_logger = "0.11"

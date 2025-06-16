@@ -353,7 +353,7 @@ dependencies = [
 
 [[package]]
 name = "arrow-pg"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "arrow",
  "bytes",
@@ -1479,7 +1479,7 @@ dependencies = [
 
 [[package]]
 name = "datafusion-postgres"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "arrow-pg",
  "async-trait",
@@ -1497,7 +1497,7 @@ dependencies = [
 
 [[package]]
 name = "datafusion-postgres-cli"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "datafusion",
  "datafusion-postgres",
