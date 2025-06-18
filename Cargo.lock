@@ -358,6 +358,7 @@ dependencies = [
  "arrow",
  "bytes",
  "chrono",
+ "datafusion",
  "futures",
  "pgwire",
  "postgres-types",
