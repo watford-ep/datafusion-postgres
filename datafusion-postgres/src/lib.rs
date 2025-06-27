@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use datafusion::prelude::SessionContext;
 use getset::{Getters, Setters, WithSetters};
+use log::{info, warn};
 use pgwire::tokio::process_socket;
 use tokio::net::TcpListener;
 
@@ -46,23 +47,23 @@ pub async fn serve(
     // Bind to the specified host and port
     let server_addr = format!("{}:{}", opts.host, opts.port);
     let listener = TcpListener::bind(&server_addr).await?;
-    println!("Listening on {}", server_addr);
+    info!("Listening on {}", server_addr);
 
     // Accept incoming connections
     loop {
         match listener.accept().await {
             Ok((socket, addr)) => {
                 let factory_ref = factory.clone();
-                println!("Accepted connection from {}", addr);
+                info!("Accepted connection from {addr}");
 
                 tokio::spawn(async move {
                     if let Err(e) = process_socket(socket, None, factory_ref).await {
-                        eprintln!("Error processing socket: {}", e);
+                        warn!("Error processing socket: {e}");
                     }
                 });
             }
             Err(e) => {
-                eprintln!("Error accept socket: {}", e);
+                info!("Error accept socket: {e}");
             }
         }
     }
