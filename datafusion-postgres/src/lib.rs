@@ -47,7 +47,7 @@ pub async fn serve(
     // Bind to the specified host and port
     let server_addr = format!("{}:{}", opts.host, opts.port);
     let listener = TcpListener::bind(&server_addr).await?;
-    info!("Listening on {}", server_addr);
+    info!("Listening on {server_addr}");
 
     // Accept incoming connections
     loop {
