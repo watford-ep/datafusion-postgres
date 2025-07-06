@@ -8,52 +8,22 @@ Built on [pgwire](https://github.com/sunng87/pgwire) to provide PostgreSQL wire 
 It was originally an example of the [pgwire](https://github.com/sunng87/pgwire)
 project.
 
-## ✨ Key Features
+## Scope of the Project
 
-- 🔌 **Full PostgreSQL Wire Protocol** - Compatible with all PostgreSQL clients and drivers
-- 🛡️ **Security Features** - Authentication, RBAC, and SSL/TLS encryption
-- 🏗️ **Complete System Catalogs** - Real `pg_catalog` tables with accurate metadata  
-- 📊 **Advanced Data Types** - Comprehensive Arrow ↔ PostgreSQL type mapping
-- 🔄 **Transaction Support** - ACID transaction lifecycle (BEGIN/COMMIT/ROLLBACK)
-- ⚡ **High Performance** - Apache DataFusion's columnar query execution
-
-## 🎯 Features
-
-### Core Functionality
-- ✅ Library and CLI tool
-- ✅ PostgreSQL wire protocol compatibility  
-- ✅ Complete `pg_catalog` system tables
-- ✅ Arrow ↔ PostgreSQL data type mapping
-- ✅ PostgreSQL functions (version, current_schema, has_table_privilege, etc.)
-
-### Security & Authentication
-- ✅ User authentication and RBAC
-- ✅ Granular permissions (SELECT, INSERT, UPDATE, DELETE, CREATE, DROP)
-- ✅ Role inheritance and grant management
-- ✅ SSL/TLS encryption
-- ✅ Query-level permission checking
-
-### Transaction Support
-- ✅ ACID transaction lifecycle
-- ✅ BEGIN/COMMIT/ROLLBACK with all variants
-- ✅ Failed transaction handling and recovery
-
-### Future Enhancements
-- ⏳ Connection pooling optimizations
-- ⏳ Advanced authentication (LDAP, certificates)
-- ⏳ COPY protocol for bulk data loading
-
-## 🔐 Authentication
-
-Supports standard pgwire authentication methods:
-
-- **Cleartext**: `CleartextStartupHandler` for simple password authentication
-- **MD5**: `MD5StartupHandler` for MD5-hashed passwords  
-- **SCRAM**: `SASLScramAuthStartupHandler` for secure authentication
+- `datafusion-postgres`: Postgres frontend for datafusion, as a library.
+  - Serving Datafusion `SessionContext` with pgwire library
+  - Customizible authentication
+  - Permission control
+  - Built-in `pg_catalog` tables
+  - Built-in postgres functions for common meta queries
+- `datafusion-postgres-cli`: A cli tool starts a postgres compatible server for
+  datafusion supported file formats, just like python's `SimpleHTTPServer`.
+- `arrow-pg`: A data type mapping, encoding/decoding library for arrow and
+  postgres(pgwire) data types.
 
 See `auth.rs` for complete implementation examples using `DfAuthSource`.
 
-## 🚀 Quick Start
+## Quick Start
 
 ### The Library `datafusion-postgres`
 
@@ -83,16 +53,15 @@ serve(session_context, &server_options).await
 
 ### Security Features
 
-```rust
-// The server automatically includes:
-// - User authentication (default postgres superuser)
-// - Role-based access control with predefined roles:
-//   - readonly: SELECT permissions
-//   - readwrite: SELECT, INSERT, UPDATE, DELETE permissions  
-//   - dbadmin: Full administrative permissions
-// - SSL/TLS encryption when certificates are provided
-// - Query-level permission checking
-```
+The server automatically includes:
+
+- User authentication (default postgres superuser)
+- Role-based access control with predefined roles:
+  - readonly: SELECT permissions
+  - readwrite: SELECT, INSERT, UPDATE, DELETE permissions
+  - dbadmin: Full administrative permissions
+- SSL/TLS encryption when certificates are provided
+- Query-level permission checking
 
 ### The CLI `datafusion-postgres-cli`
 
@@ -131,7 +100,7 @@ datafusion-postgres-cli \
   --tls-cert server.crt \
   --tls-key server.key
 
-# Run without encryption (development only)  
+# Run without encryption (development only)
 datafusion-postgres-cli --csv data:sample.csv
 ```
 
@@ -161,13 +130,13 @@ psql -h 127.0.0.1 -p 5432 -U postgres
 
 ```sql
 postgres=> SELECT COUNT(*) FROM climate;
- count 
+ count
 -------
   1462
 (1 row)
 
 postgres=> SELECT date, meantemp FROM climate WHERE meantemp > 35 LIMIT 5;
-    date    | meantemp 
+    date    | meantemp
 ------------+----------
  2017-05-15 |     36.9
  2017-05-16 |     37.9
@@ -179,7 +148,7 @@ postgres=> SELECT date, meantemp FROM climate WHERE meantemp > 35 LIMIT 5;
 postgres=> BEGIN;
 BEGIN
 postgres=> SELECT AVG(meantemp) FROM climate;
-       avg        
+       avg
 ------------------
  25.4955206557617
 (1 row)
