@@ -176,6 +176,14 @@ TLS enabled using cert: server.crt and key: server.key
 Listening on 127.0.0.1:5432 with TLS encryption
 ```
 
+## Community
+
+### Developer Mailing List
+
+If you like the idea of pgwire, datafusion-postgres and want to join the
+development of the library, or its ecosystem integrations, extensions, you are
+welcomed to join our developer mailing list: https://groups.io/g/pgwire-dev/
+
 ## License
 
 This library is released under Apache license.
