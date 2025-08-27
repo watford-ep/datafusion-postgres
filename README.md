@@ -41,16 +41,21 @@ options.
 use std::sync::Arc;
 use datafusion::prelude::SessionContext;
 use datafusion_postgres::{serve, ServerOptions};
+use datafusion_postgres::pg_catalog::setup_pg_catalog;
 
 // Create datafusion SessionContext
 let session_context = Arc::new(SessionContext::new());
 // Configure your `session_context`
 // ...
 
+// Optional: setup pg_catalog schema
+setup_pg_catalog(session_context, "datafusion")?;
+
 // Start the Postgres compatible server with SSL/TLS
 let server_options = ServerOptions::new()
     .with_host("127.0.0.1".to_string())
     .with_port(5432)
+    // Optional: setup tls
     .with_tls_cert_path(Some("server.crt".to_string()))
     .with_tls_key_path(Some("server.key".to_string()));
 
