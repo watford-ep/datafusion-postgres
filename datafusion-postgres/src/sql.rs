@@ -2,8 +2,20 @@ use std::collections::HashSet;
 use std::ops::ControlFlow;
 use std::sync::Arc;
 
+use datafusion::sql::sqlparser::ast::Array;
+use datafusion::sql::sqlparser::ast::ArrayElemTypeDef;
+use datafusion::sql::sqlparser::ast::BinaryOperator;
+use datafusion::sql::sqlparser::ast::CastKind;
+use datafusion::sql::sqlparser::ast::DataType;
 use datafusion::sql::sqlparser::ast::Expr;
+use datafusion::sql::sqlparser::ast::Function;
+use datafusion::sql::sqlparser::ast::FunctionArg;
+use datafusion::sql::sqlparser::ast::FunctionArgExpr;
+use datafusion::sql::sqlparser::ast::FunctionArgumentList;
+use datafusion::sql::sqlparser::ast::FunctionArguments;
 use datafusion::sql::sqlparser::ast::Ident;
+use datafusion::sql::sqlparser::ast::ObjectName;
+use datafusion::sql::sqlparser::ast::ObjectNamePart;
 use datafusion::sql::sqlparser::ast::OrderByKind;
 use datafusion::sql::sqlparser::ast::Query;
 use datafusion::sql::sqlparser::ast::Select;
@@ -13,7 +25,9 @@ use datafusion::sql::sqlparser::ast::SetExpr;
 use datafusion::sql::sqlparser::ast::Statement;
 use datafusion::sql::sqlparser::ast::TableFactor;
 use datafusion::sql::sqlparser::ast::TableWithJoins;
+use datafusion::sql::sqlparser::ast::UnaryOperator;
 use datafusion::sql::sqlparser::ast::Value;
+use datafusion::sql::sqlparser::ast::ValueWithSpan;
 use datafusion::sql::sqlparser::ast::VisitMut;
 use datafusion::sql::sqlparser::ast::VisitorMut;
 use datafusion::sql::sqlparser::dialect::PostgreSqlDialect;
@@ -272,6 +286,7 @@ impl RemoveUnsupportedTypes {
     pub fn new() -> Self {
         let mut unsupported_types = HashSet::new();
         unsupported_types.insert("regclass".to_owned());
+        unsupported_types.insert("regproc".to_owned());
 
         Self { unsupported_types }
     }
@@ -326,6 +341,262 @@ impl SqlStatementRewriteRule for RemoveUnsupportedTypes {
     }
 }
 
+/// Rewrite Postgres's ANY operator to array_contains
+#[derive(Debug)]
+pub struct RewriteArrayAnyAllOperation;
+
+struct RewriteArrayAnyAllOperationVisitor;
+
+impl RewriteArrayAnyAllOperationVisitor {
+    fn any_to_array_cofntains(&self, left: &Expr, right: &Expr) -> Expr {
+        Expr::Function(Function {
+            name: ObjectName::from(vec![Ident::new("array_contains")]),
+            args: FunctionArguments::List(FunctionArgumentList {
+                args: vec![
+                    FunctionArg::Unnamed(FunctionArgExpr::Expr(right.clone())),
+                    FunctionArg::Unnamed(FunctionArgExpr::Expr(left.clone())),
+                ],
+                duplicate_treatment: None,
+                clauses: vec![],
+            }),
+            uses_odbc_syntax: false,
+            parameters: FunctionArguments::None,
+            filter: None,
+            null_treatment: None,
+            over: None,
+            within_group: vec![],
+        })
+    }
+}
+
+impl VisitorMut for RewriteArrayAnyAllOperationVisitor {
+    type Break = ();
+
+    fn pre_visit_expr(&mut self, expr: &mut Expr) -> ControlFlow<Self::Break> {
+        match expr {
+            Expr::AnyOp {
+                left,
+                compare_op,
+                right,
+                ..
+            } => match compare_op {
+                BinaryOperator::Eq => {
+                    *expr = self.any_to_array_cofntains(left.as_ref(), right.as_ref());
+                }
+                BinaryOperator::NotEq => {
+                    // TODO:left not equals to any element in array
+                }
+                _ => {}
+            },
+            Expr::AllOp {
+                left,
+                compare_op,
+                right,
+            } => match compare_op {
+                BinaryOperator::Eq => {
+                    // TODO: left equals to every element in array
+                }
+                BinaryOperator::NotEq => {
+                    *expr = Expr::UnaryOp {
+                        op: UnaryOperator::Not,
+                        expr: Box::new(self.any_to_array_cofntains(left.as_ref(), right.as_ref())),
+                    }
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+
+        ControlFlow::Continue(())
+    }
+}
+
+impl SqlStatementRewriteRule for RewriteArrayAnyAllOperation {
+    fn rewrite(&self, mut s: Statement) -> Statement {
+        let mut visitor = RewriteArrayAnyAllOperationVisitor;
+
+        let _ = s.visit(&mut visitor);
+
+        s
+    }
+}
+
+/// Prepend qualifier to table_name
+///
+/// Postgres has pg_catalog in search_path by default so it allow access to
+/// `pg_namespace` without `pg_catalog.` qualifier
+#[derive(Debug)]
+pub struct PrependUnqualifiedTableName {
+    table_names: HashSet<String>,
+}
+
+impl PrependUnqualifiedTableName {
+    pub fn new() -> Self {
+        let mut table_names = HashSet::new();
+
+        table_names.insert("pg_namespace".to_owned());
+
+        Self { table_names }
+    }
+}
+
+struct PrependUnqualifiedTableNameVisitor<'a> {
+    table_names: &'a HashSet<String>,
+}
+
+impl<'a> VisitorMut for PrependUnqualifiedTableNameVisitor<'a> {
+    type Break = ();
+
+    fn pre_visit_table_factor(
+        &mut self,
+        table_factor: &mut TableFactor,
+    ) -> ControlFlow<Self::Break> {
+        if let TableFactor::Table { name, .. } = table_factor {
+            if name.0.len() == 1 {
+                let ObjectNamePart::Identifier(ident) = &name.0[0];
+                if self.table_names.contains(&ident.to_string()) {
+                    *name = ObjectName(vec![
+                        ObjectNamePart::Identifier(Ident::new("pg_catalog")),
+                        name.0[0].clone(),
+                    ]);
+                }
+            }
+        }
+
+        ControlFlow::Continue(())
+    }
+}
+
+impl SqlStatementRewriteRule for PrependUnqualifiedTableName {
+    fn rewrite(&self, mut s: Statement) -> Statement {
+        let mut visitor = PrependUnqualifiedTableNameVisitor {
+            table_names: &self.table_names,
+        };
+
+        let _ = s.visit(&mut visitor);
+        s
+    }
+}
+
+#[derive(Debug)]
+pub struct FixArrayLiteral;
+
+struct FixArrayLiteralVisitor;
+
+impl FixArrayLiteralVisitor {
+    fn is_string_type(dt: &DataType) -> bool {
+        matches!(
+            dt,
+            DataType::Text | DataType::Varchar(_) | DataType::Char(_) | DataType::String(_)
+        )
+    }
+}
+
+impl VisitorMut for FixArrayLiteralVisitor {
+    type Break = ();
+
+    fn pre_visit_expr(&mut self, expr: &mut Expr) -> ControlFlow<Self::Break> {
+        if let Expr::Cast {
+            kind,
+            expr,
+            data_type,
+            ..
+        } = expr
+        {
+            if kind == &CastKind::DoubleColon {
+                if let DataType::Array(arr) = data_type {
+                    // cast some to
+                    if let Expr::Value(ValueWithSpan {
+                        value: Value::SingleQuotedString(array_literal),
+                        ..
+                    }) = expr.as_ref()
+                    {
+                        let items =
+                            array_literal.trim_matches(|c| c == '{' || c == '}' || c == ' ');
+                        let items = items.split(',').map(|s| s.trim()).filter(|s| !s.is_empty());
+
+                        let is_text = match arr {
+                            ArrayElemTypeDef::AngleBracket(dt) => Self::is_string_type(dt.as_ref()),
+                            ArrayElemTypeDef::SquareBracket(dt, _) => {
+                                Self::is_string_type(dt.as_ref())
+                            }
+                            ArrayElemTypeDef::Parenthesis(dt) => Self::is_string_type(dt.as_ref()),
+                            _ => false,
+                        };
+
+                        let elems = items
+                            .map(|s| {
+                                if is_text {
+                                    Expr::Value(
+                                        Value::SingleQuotedString(s.to_string()).with_empty_span(),
+                                    )
+                                } else {
+                                    Expr::Value(
+                                        Value::Number(s.to_string(), false).with_empty_span(),
+                                    )
+                                }
+                            })
+                            .collect();
+                        *expr = Box::new(Expr::Array(Array {
+                            elem: elems,
+                            named: true,
+                        }));
+                    }
+                }
+            }
+        }
+
+        ControlFlow::Continue(())
+    }
+}
+
+impl SqlStatementRewriteRule for FixArrayLiteral {
+    fn rewrite(&self, mut s: Statement) -> Statement {
+        let mut visitor = FixArrayLiteralVisitor;
+
+        let _ = s.visit(&mut visitor);
+        s
+    }
+}
+
+/// Remove qualifier from table function
+///
+/// The query engine doesn't support qualified table function name
+#[derive(Debug)]
+pub struct RemoveTableFunctionQualifier;
+
+struct RemoveTableFunctionQualifierVisitor;
+
+impl VisitorMut for RemoveTableFunctionQualifierVisitor {
+    type Break = ();
+
+    fn pre_visit_table_factor(
+        &mut self,
+        table_factor: &mut TableFactor,
+    ) -> ControlFlow<Self::Break> {
+        if let TableFactor::Table { name, args, .. } = table_factor {
+            if args.is_some() {
+                //  multiple idents in name, which means it's a qualified table name
+                if name.0.len() > 1 {
+                    if let Some(last_ident) = name.0.pop() {
+                        *name = ObjectName(vec![last_ident]);
+                    }
+                }
+            }
+        }
+        ControlFlow::Continue(())
+    }
+}
+
+impl SqlStatementRewriteRule for RemoveTableFunctionQualifier {
+    fn rewrite(&self, mut s: Statement) -> Statement {
+        let mut visitor = RemoveTableFunctionQualifierVisitor;
+
+        let _ = s.visit(&mut visitor);
+        s
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -361,6 +632,15 @@ mod tests {
             &rules,
             "SELECT t1.oid, t2.* FROM tbl1 AS t1 JOIN tbl2 AS t2 ON t1.id = t2.id",
             "SELECT t1.oid, t2.* FROM tbl1 AS t1 JOIN tbl2 AS t2 ON t1.id = t2.id"
+        );
+
+        let sql = "SELECT n.oid,n.*,d.description FROM pg_catalog.pg_namespace n LEFT OUTER JOIN pg_catalog.pg_description d ON d.objoid=n.oid AND d.objsubid=0 AND d.classoid='pg_namespace' ORDER BY nspsname";
+        let statement = parse(sql).expect("Failed to parse").remove(0);
+
+        let statement = rewrite(statement, &rules);
+        assert_eq!(
+            statement.to_string(),
+            "SELECT n.oid AS __alias_oid, n.*, d.description FROM pg_catalog.pg_namespace AS n LEFT OUTER JOIN pg_catalog.pg_description AS d ON d.objoid = n.oid AND d.objsubid = 0 AND d.classoid = 'pg_namespace' ORDER BY nspsname"
         );
     }
 
@@ -415,6 +695,89 @@ mod tests {
             &rules,
             "SELECT n.* FROM pg_catalog.pg_namespace n WHERE n.nspname = 'pg_catalog' ORDER BY n.nspname",
             "SELECT n.* FROM pg_catalog.pg_namespace AS n WHERE n.nspname = 'pg_catalog' ORDER BY n.nspname"
+        );
+    }
+
+    #[test]
+    fn test_any_to_array_contains() {
+        let rules: Vec<Arc<dyn SqlStatementRewriteRule>> =
+            vec![Arc::new(RewriteArrayAnyAllOperation)];
+
+        assert_rewrite!(
+            &rules,
+            "SELECT a = ANY(current_schemas(true))",
+            "SELECT array_contains(current_schemas(true), a)"
+        );
+
+        assert_rewrite!(
+            &rules,
+            "SELECT a <> ALL(current_schemas(true))",
+            "SELECT NOT array_contains(current_schemas(true), a)"
+        );
+
+        assert_rewrite!(
+            &rules,
+            "SELECT a FROM tbl WHERE a = ANY(current_schemas(true))",
+            "SELECT a FROM tbl WHERE array_contains(current_schemas(true), a)"
+        );
+    }
+
+    #[test]
+    fn test_prepend_unqualified_table_name() {
+        let rules: Vec<Arc<dyn SqlStatementRewriteRule>> =
+            vec![Arc::new(PrependUnqualifiedTableName::new())];
+
+        assert_rewrite!(
+            &rules,
+            "SELECT * FROM pg_catalog.pg_namespace",
+            "SELECT * FROM pg_catalog.pg_namespace"
+        );
+
+        assert_rewrite!(
+            &rules,
+            "SELECT * FROM pg_namespace",
+            "SELECT * FROM pg_catalog.pg_namespace"
+        );
+
+        assert_rewrite!(
+            &rules,
+            "SELECT typtype, typname, pg_type.oid FROM pg_catalog.pg_type LEFT JOIN pg_namespace as ns ON ns.oid = oid",
+            "SELECT typtype, typname, pg_type.oid FROM pg_catalog.pg_type LEFT JOIN pg_catalog.pg_namespace AS ns ON ns.oid = oid"
+        );
+    }
+
+    #[test]
+    fn test_array_literal_fix() {
+        let rules: Vec<Arc<dyn SqlStatementRewriteRule>> = vec![Arc::new(FixArrayLiteral)];
+
+        assert_rewrite!(
+            &rules,
+            "SELECT '{a, abc}'::text[]",
+            "SELECT ARRAY['a', 'abc']::TEXT[]"
+        );
+
+        assert_rewrite!(
+            &rules,
+            "SELECT '{1, 2}'::int[]",
+            "SELECT ARRAY[1, 2]::INT[]"
+        );
+
+        assert_rewrite!(
+            &rules,
+            "SELECT '{t, f}'::bool[]",
+            "SELECT ARRAY[t, f]::BOOL[]"
+        );
+    }
+
+    #[test]
+    fn test_remove_qualifier_from_table_function() {
+        let rules: Vec<Arc<dyn SqlStatementRewriteRule>> =
+            vec![Arc::new(RemoveTableFunctionQualifier)];
+
+        assert_rewrite!(
+            &rules,
+            "SELECT * FROM pg_catalog.pg_get_keywords()",
+            "SELECT * FROM pg_get_keywords()"
         );
     }
 }

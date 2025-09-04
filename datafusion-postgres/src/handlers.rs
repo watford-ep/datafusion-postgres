@@ -3,14 +3,16 @@ use std::sync::Arc;
 
 use crate::auth::{AuthManager, Permission, ResourceType};
 use crate::sql::{
-    parse, rewrite, AliasDuplicatedProjectionRewrite, RemoveUnsupportedTypes,
-    ResolveUnqualifiedIdentifer, SqlStatementRewriteRule,
+    parse, rewrite, AliasDuplicatedProjectionRewrite, FixArrayLiteral, PrependUnqualifiedTableName,
+    RemoveTableFunctionQualifier, RemoveUnsupportedTypes, ResolveUnqualifiedIdentifer,
+    RewriteArrayAnyAllOperation, SqlStatementRewriteRule,
 };
 use async_trait::async_trait;
 use datafusion::arrow::datatypes::DataType;
 use datafusion::logical_expr::LogicalPlan;
 use datafusion::prelude::*;
 use datafusion::sql::parser::Statement;
+use log::warn;
 use pgwire::api::auth::noop::NoopStartupHandler;
 use pgwire::api::auth::StartupHandler;
 use pgwire::api::portal::{Format, Portal};
@@ -80,6 +82,10 @@ impl DfSessionService {
             Arc::new(AliasDuplicatedProjectionRewrite),
             Arc::new(ResolveUnqualifiedIdentifer),
             Arc::new(RemoveUnsupportedTypes::new()),
+            Arc::new(RewriteArrayAnyAllOperation),
+            Arc::new(PrependUnqualifiedTableName::new()),
+            Arc::new(FixArrayLiteral),
+            Arc::new(RemoveTableFunctionQualifier),
         ];
         let parser = Arc::new(Parser {
             session_context: session_context.clone(),
@@ -211,14 +217,12 @@ impl DfSessionService {
                 }
             } else {
                 // pass SET query to datafusion
-                let df = self
-                    .session_context
-                    .sql(query_lower)
-                    .await
-                    .map_err(|err| PgWireError::ApiError(Box::new(err)))?;
+                if let Err(e) = self.session_context.sql(query_lower).await {
+                    warn!("SET statement {query_lower} is not supported by datafusion, error {e}, statement ignored");
+                }
 
-                let resp = df::encode_dataframe(df, &Format::UnifiedText).await?;
-                Ok(Some(Response::Query(resp)))
+                // Always return SET success
+                Ok(Some(Response::Execution(Tag::new("SET"))))
             }
         } else {
             Ok(None)
@@ -297,8 +301,8 @@ impl DfSessionService {
                     Ok(Some(Response::Query(resp)))
                 }
                 "show search_path" => {
-                    let default_catalog = "datafusion";
-                    let resp = Self::mock_show_response("search_path", default_catalog)?;
+                    let default_schema = "public";
+                    let resp = Self::mock_show_response("search_path", default_schema)?;
                     Ok(Some(Response::Query(resp)))
                 }
                 _ => Err(PgWireError::UserError(Box::new(
@@ -331,7 +335,8 @@ impl SimpleQueryHandler for DfSessionService {
         statement = rewrite(statement, &self.sql_rewrite_rules);
 
         // TODO: improve statement check by using statement directly
-        let query_lower = statement.to_string().to_lowercase().trim().to_string();
+        let query = statement.to_string();
+        let query_lower = query.to_lowercase().trim().to_string();
 
         // Check permissions for the query (skip for SET, transaction, and SHOW statements)
         if !query_lower.starts_with("set")
@@ -343,7 +348,7 @@ impl SimpleQueryHandler for DfSessionService {
             && !query_lower.starts_with("abort")
             && !query_lower.starts_with("show")
         {
-            self.check_query_permission(client, query).await?;
+            self.check_query_permission(client, &query).await?;
         }
 
         if let Some(resp) = self.try_respond_set_statements(&query_lower).await? {
@@ -373,7 +378,7 @@ impl SimpleQueryHandler for DfSessionService {
             )));
         }
 
-        let df_result = self.session_context.sql(query).await;
+        let df_result = self.session_context.sql(&query).await;
 
         // Handle query execution errors and transaction state
         let df = match df_result {
