@@ -4,8 +4,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use datafusion::arrow::array::{
-    as_boolean_array, ArrayRef, BooleanArray, BooleanBuilder, RecordBatch, StringArray,
-    StringBuilder,
+    as_boolean_array, ArrayRef, BooleanBuilder, RecordBatch, StringArray, StringBuilder,
 };
 use datafusion::arrow::datatypes::{DataType, Field, SchemaRef};
 use datafusion::arrow::ipc::reader::FileReader;
@@ -20,12 +19,16 @@ use datafusion::prelude::{create_udf, Expr, SessionContext};
 use postgres_types::Oid;
 use tokio::sync::RwLock;
 
+mod empty_table;
+mod has_privilege_udf;
 mod pg_attribute;
 mod pg_class;
 mod pg_database;
 mod pg_get_expr_udf;
 mod pg_namespace;
 mod pg_settings;
+mod pg_tables;
+mod pg_views;
 
 const PG_CATALOG_TABLE_PG_AGGREGATE: &str = "pg_aggregate";
 const PG_CATALOG_TABLE_PG_AM: &str = "pg_am";
@@ -89,6 +92,10 @@ const PG_CATALOG_TABLE_PG_TABLESPACE: &str = "pg_tablespace";
 const PG_CATALOG_TABLE_PG_TRIGGER: &str = "pg_trigger";
 const PG_CATALOG_TABLE_PG_USER_MAPPING: &str = "pg_user_mapping";
 const PG_CATALOG_VIEW_PG_SETTINGS: &str = "pg_settings";
+const PG_CATALOG_VIEW_PG_VIEWS: &str = "pg_views";
+const PG_CATALOG_VIEW_PG_MATVIEWS: &str = "pg_matviews";
+const PG_CATALOG_VIEW_PG_TABLES: &str = "pg_tables";
+const PG_CATALOG_VIEW_PG_STAT_USER_TABELS: &str = "pg_stat_user_tables";
 
 /// Determine PostgreSQL table type (relkind) from DataFusion TableProvider
 fn get_table_type(table: &Arc<dyn TableProvider>) -> &'static str {
@@ -184,6 +191,9 @@ pub const PG_CATALOG_TABLES: &[&str] = &[
     PG_CATALOG_TABLE_PG_TRIGGER,
     PG_CATALOG_TABLE_PG_USER_MAPPING,
     PG_CATALOG_VIEW_PG_SETTINGS,
+    PG_CATALOG_VIEW_PG_VIEWS,
+    PG_CATALOG_VIEW_PG_MATVIEWS,
+    PG_CATALOG_VIEW_PG_STAT_USER_TABELS,
 ];
 
 #[derive(Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
@@ -315,9 +325,10 @@ impl SchemaProvider for PgCatalogSchemaProvider {
                     self.oid_counter.clone(),
                     self.oid_cache.clone(),
                 ));
-                Ok(Some(Arc::new(
-                    StreamingTable::try_new(Arc::clone(table.schema()), vec![table]).unwrap(),
-                )))
+                Ok(Some(Arc::new(StreamingTable::try_new(
+                    Arc::clone(table.schema()),
+                    vec![table],
+                )?)))
             }
             PG_CATALOG_TABLE_PG_CLASS => {
                 let table = Arc::new(pg_class::PgClassTable::new(
@@ -325,9 +336,10 @@ impl SchemaProvider for PgCatalogSchemaProvider {
                     self.oid_counter.clone(),
                     self.oid_cache.clone(),
                 ));
-                Ok(Some(Arc::new(
-                    StreamingTable::try_new(Arc::clone(table.schema()), vec![table]).unwrap(),
-                )))
+                Ok(Some(Arc::new(StreamingTable::try_new(
+                    Arc::clone(table.schema()),
+                    vec![table],
+                )?)))
             }
             PG_CATALOG_TABLE_PG_DATABASE => {
                 let table = Arc::new(pg_database::PgDatabaseTable::new(
@@ -335,9 +347,10 @@ impl SchemaProvider for PgCatalogSchemaProvider {
                     self.oid_counter.clone(),
                     self.oid_cache.clone(),
                 ));
-                Ok(Some(Arc::new(
-                    StreamingTable::try_new(Arc::clone(table.schema()), vec![table]).unwrap(),
-                )))
+                Ok(Some(Arc::new(StreamingTable::try_new(
+                    Arc::clone(table.schema()),
+                    vec![table],
+                )?)))
             }
             PG_CATALOG_TABLE_PG_NAMESPACE => {
                 let table = Arc::new(pg_namespace::PgNamespaceTable::new(
@@ -345,13 +358,26 @@ impl SchemaProvider for PgCatalogSchemaProvider {
                     self.oid_counter.clone(),
                     self.oid_cache.clone(),
                 ));
-                Ok(Some(Arc::new(
-                    StreamingTable::try_new(Arc::clone(table.schema()), vec![table]).unwrap(),
-                )))
+                Ok(Some(Arc::new(StreamingTable::try_new(
+                    Arc::clone(table.schema()),
+                    vec![table],
+                )?)))
+            }
+            PG_CATALOG_VIEW_PG_TABLES => {
+                let table = Arc::new(pg_tables::PgTablesTable::new(self.catalog_list.clone()));
+                Ok(Some(Arc::new(StreamingTable::try_new(
+                    Arc::clone(table.schema()),
+                    vec![table],
+                )?)))
             }
             PG_CATALOG_VIEW_PG_SETTINGS => {
                 let table = pg_settings::PgSettingsView::try_new()?;
                 Ok(Some(Arc::new(table.try_into_memtable()?)))
+            }
+            PG_CATALOG_VIEW_PG_VIEWS => Ok(Some(Arc::new(pg_views::pg_views()?))),
+            PG_CATALOG_VIEW_PG_MATVIEWS => Ok(Some(Arc::new(pg_views::pg_matviews()?))),
+            PG_CATALOG_VIEW_PG_STAT_USER_TABELS => {
+                Ok(Some(Arc::new(pg_views::pg_stat_user_tables()?)))
             }
 
             _ => Ok(None),
@@ -687,7 +713,7 @@ impl PgCatalogStaticTables {
     }
 }
 
-pub fn create_current_schemas_udf() -> ScalarUDF {
+pub fn create_current_schemas_udf(name: &str) -> ScalarUDF {
     // Define the function implementation
     let func = move |args: &[ColumnarValue]| {
         let args = ColumnarValue::values_to_arrays(args)?;
@@ -710,7 +736,7 @@ pub fn create_current_schemas_udf() -> ScalarUDF {
 
     // Wrap the implementation in a scalar function
     create_udf(
-        "current_schemas",
+        name,
         vec![DataType::Boolean],
         DataType::List(Arc::new(Field::new("schema", DataType::Utf8, false))),
         Volatility::Immutable,
@@ -718,7 +744,7 @@ pub fn create_current_schemas_udf() -> ScalarUDF {
     )
 }
 
-pub fn create_current_schema_udf() -> ScalarUDF {
+pub fn create_current_schema_udf(name: &str) -> ScalarUDF {
     // Define the function implementation
     let func = move |_args: &[ColumnarValue]| {
         // Create a UTF8 array with a single value
@@ -731,7 +757,28 @@ pub fn create_current_schema_udf() -> ScalarUDF {
 
     // Wrap the implementation in a scalar function
     create_udf(
-        "current_schema",
+        name,
+        vec![],
+        DataType::Utf8,
+        Volatility::Immutable,
+        Arc::new(func),
+    )
+}
+
+pub fn create_current_database_udf(name: &str) -> ScalarUDF {
+    // Define the function implementation
+    let func = move |_args: &[ColumnarValue]| {
+        // Create a UTF8 array with a single value
+        let mut builder = StringBuilder::new();
+        builder.append_value("datafusion");
+        let array: ArrayRef = Arc::new(builder.finish());
+
+        Ok(ColumnarValue::Array(array))
+    };
+
+    // Wrap the implementation in a scalar function
+    create_udf(
+        name,
         vec![],
         DataType::Utf8,
         Volatility::Immutable,
@@ -789,7 +836,7 @@ pub fn create_pg_get_userbyid_udf() -> ScalarUDF {
     )
 }
 
-pub fn create_pg_table_is_visible() -> ScalarUDF {
+pub fn create_pg_table_is_visible(name: &str) -> ScalarUDF {
     // Define the function implementation
     let func = move |args: &[ColumnarValue]| {
         let args = ColumnarValue::values_to_arrays(args)?;
@@ -808,64 +855,8 @@ pub fn create_pg_table_is_visible() -> ScalarUDF {
 
     // Wrap the implementation in a scalar function
     create_udf(
-        "pg_catalog.pg_table_is_visible",
+        name,
         vec![DataType::Int32],
-        DataType::Boolean,
-        Volatility::Stable,
-        Arc::new(func),
-    )
-}
-
-pub fn create_has_table_privilege_3param_udf() -> ScalarUDF {
-    // Define the function implementation for 3-parameter version
-    let func = move |args: &[ColumnarValue]| {
-        let args = ColumnarValue::values_to_arrays(args)?;
-        let user = &args[0]; // User (can be name or OID)
-        let _table = &args[1]; // Table (can be name or OID)
-        let _privilege = &args[2]; // Privilege type (SELECT, INSERT, etc.)
-
-        // For now, always return true (full access)
-        let mut builder = BooleanArray::builder(user.len());
-        for _ in 0..user.len() {
-            builder.append_value(true);
-        }
-
-        let array: ArrayRef = Arc::new(builder.finish());
-
-        Ok(ColumnarValue::Array(array))
-    };
-
-    // Wrap the implementation in a scalar function
-    create_udf(
-        "has_table_privilege",
-        vec![DataType::Utf8, DataType::Utf8, DataType::Utf8],
-        DataType::Boolean,
-        Volatility::Stable,
-        Arc::new(func),
-    )
-}
-
-pub fn create_has_table_privilege_2param_udf() -> ScalarUDF {
-    // Define the function implementation for 2-parameter version (current user, table, privilege)
-    let func = move |args: &[ColumnarValue]| {
-        let args = ColumnarValue::values_to_arrays(args)?;
-        let table = &args[0]; // Table (can be name or OID)
-        let _privilege = &args[1]; // Privilege type (SELECT, INSERT, etc.)
-
-        // For now, always return true (full access for current user)
-        let mut builder = BooleanArray::builder(table.len());
-        for _ in 0..table.len() {
-            builder.append_value(true);
-        }
-        let array: ArrayRef = Arc::new(builder.finish());
-
-        Ok(ColumnarValue::Array(array))
-    };
-
-    // Wrap the implementation in a scalar function
-    create_udf(
-        "has_table_privilege",
-        vec![DataType::Utf8, DataType::Utf8],
         DataType::Boolean,
         Volatility::Stable,
         Arc::new(func),
@@ -923,7 +914,6 @@ pub fn create_pg_get_partkeydef_udf() -> ScalarUDF {
         let args = ColumnarValue::values_to_arrays(args)?;
         let oid = &args[0];
 
-        // For now, always return true (full access for current user)
         let mut builder = StringBuilder::new();
         for _ in 0..oid.len() {
             builder.append_value("");
@@ -962,16 +952,37 @@ pub fn setup_pg_catalog(
         })?
         .register_schema("pg_catalog", Arc::new(pg_catalog))?;
 
-    session_context.register_udf(create_current_schema_udf());
-    session_context.register_udf(create_current_schemas_udf());
+    session_context.register_udf(create_current_database_udf("current_database"));
+    session_context.register_udf(create_current_schema_udf("current_schema"));
+    session_context.register_udf(create_current_schema_udf("pg_catalog.current_schema"));
+    session_context.register_udf(create_current_schemas_udf("current_schemas"));
+    session_context.register_udf(create_current_schemas_udf("pg_catalog.current_schemas"));
     session_context.register_udf(create_version_udf());
     session_context.register_udf(create_pg_get_userbyid_udf());
-    session_context.register_udf(create_has_table_privilege_2param_udf());
-    session_context.register_udf(create_pg_table_is_visible());
+    session_context.register_udf(has_privilege_udf::create_has_privilege_udf(
+        "has_table_privilege",
+    ));
+    session_context.register_udf(has_privilege_udf::create_has_privilege_udf(
+        "pg_catalog.has_table_privilege",
+    ));
+    session_context.register_udf(has_privilege_udf::create_has_privilege_udf(
+        "has_schema_privilege",
+    ));
+    session_context.register_udf(has_privilege_udf::create_has_privilege_udf(
+        "pg_catalog.has_schema_privilege",
+    ));
+    session_context.register_udf(has_privilege_udf::create_has_privilege_udf(
+        "has_any_column_privilege",
+    ));
+    session_context.register_udf(has_privilege_udf::create_has_privilege_udf(
+        "pg_catalog.has_any_column_privilege",
+    ));
+    session_context.register_udf(create_pg_table_is_visible("pg_catalog"));
+    session_context.register_udf(create_pg_table_is_visible("pg_catalog.pg_table_is_visible"));
     session_context.register_udf(create_format_type_udf());
     session_context.register_udf(create_session_user_udf());
     session_context.register_udtf("pg_get_keywords", static_tables.pg_get_keywords.clone());
-    session_context.register_udf(pg_get_expr_udf::PgGetExprUDF::new().into_scalar_udf());
+    session_context.register_udf(pg_get_expr_udf::create_pg_get_expr_udf());
     session_context.register_udf(create_pg_get_partkeydef_udf());
 
     Ok(())
