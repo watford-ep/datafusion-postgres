@@ -19,16 +19,16 @@ use datafusion::prelude::{create_udf, Expr, SessionContext};
 use postgres_types::Oid;
 use tokio::sync::RwLock;
 
-mod empty_table;
-mod has_privilege_udf;
-mod pg_attribute;
-mod pg_class;
-mod pg_database;
-mod pg_get_expr_udf;
-mod pg_namespace;
-mod pg_settings;
-mod pg_tables;
-mod pg_views;
+pub mod empty_table;
+pub mod has_privilege_udf;
+pub mod pg_attribute;
+pub mod pg_class;
+pub mod pg_database;
+pub mod pg_get_expr_udf;
+pub mod pg_namespace;
+pub mod pg_settings;
+pub mod pg_tables;
+pub mod pg_views;
 
 const PG_CATALOG_TABLE_PG_AGGREGATE: &str = "pg_aggregate";
 const PG_CATALOG_TABLE_PG_AM: &str = "pg_am";
@@ -197,7 +197,7 @@ pub const PG_CATALOG_TABLES: &[&str] = &[
 ];
 
 #[derive(Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
-enum OidCacheKey {
+pub(crate) enum OidCacheKey {
     Catalog(String),
     Schema(String, String),
     /// Table by schema and table name
