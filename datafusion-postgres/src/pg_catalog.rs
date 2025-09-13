@@ -977,7 +977,7 @@ pub fn setup_pg_catalog(
     session_context.register_udf(has_privilege_udf::create_has_privilege_udf(
         "pg_catalog.has_any_column_privilege",
     ));
-    session_context.register_udf(create_pg_table_is_visible("pg_catalog"));
+    session_context.register_udf(create_pg_table_is_visible("pg_table_is_visible"));
     session_context.register_udf(create_pg_table_is_visible("pg_catalog.pg_table_is_visible"));
     session_context.register_udf(create_format_type_udf());
     session_context.register_udf(create_session_user_udf());
