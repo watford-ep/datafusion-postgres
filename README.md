@@ -32,8 +32,10 @@ See `auth.rs` for complete implementation examples using `DfAuthSource`.
 ## Supported Database Clients
 
 - Database Clients
+  - [x] psql
   - [x] DBeaver
   - [x] pgcli
+  - [x] VSCode SQLTools
 - BI
   - [x] Metabase
 
