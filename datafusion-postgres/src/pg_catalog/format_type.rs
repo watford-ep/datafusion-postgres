@@ -201,7 +201,7 @@ fn get_array_base_type(array_oid: i32) -> Option<i32> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Hash, PartialEq, Eq)]
 pub struct FormatTypeUDF {
     signature: Signature,
 }
