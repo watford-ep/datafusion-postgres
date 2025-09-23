@@ -22,6 +22,7 @@ use tokio::sync::RwLock;
 
 use crate::auth::AuthManager;
 use crate::pg_catalog::catalog_info::CatalogInfo;
+use crate::pg_catalog::empty_table::EmptyTable;
 
 pub mod catalog_info;
 pub mod empty_table;
@@ -171,7 +172,10 @@ pub const PG_CATALOG_TABLES: &[&str] = &[
     PG_CATALOG_TABLE_PG_TABLESPACE,
     PG_CATALOG_TABLE_PG_TRIGGER,
     PG_CATALOG_TABLE_PG_USER_MAPPING,
+    PG_CATALOG_VIEW_PG_ROLES,
     PG_CATALOG_VIEW_PG_SETTINGS,
+    PG_CATALOG_VIEW_PG_STAT_GSSAPI,
+    PG_CATALOG_VIEW_PG_TABLES,
     PG_CATALOG_VIEW_PG_VIEWS,
     PG_CATALOG_VIEW_PG_MATVIEWS,
     PG_CATALOG_VIEW_PG_STAT_USER_TABLES,
@@ -207,180 +211,11 @@ impl<C: CatalogInfo> SchemaProvider for PgCatalogSchemaProvider<C> {
     }
 
     async fn table(&self, name: &str) -> Result<Option<Arc<dyn TableProvider>>> {
-        match name.to_ascii_lowercase().as_str() {
-            PG_CATALOG_TABLE_PG_AGGREGATE => Ok(Some(self.static_tables.pg_aggregate.clone())),
-            PG_CATALOG_TABLE_PG_AM => Ok(Some(self.static_tables.pg_am.clone())),
-            PG_CATALOG_TABLE_PG_AMOP => Ok(Some(self.static_tables.pg_amop.clone())),
-            PG_CATALOG_TABLE_PG_AMPROC => Ok(Some(self.static_tables.pg_amproc.clone())),
-            PG_CATALOG_TABLE_PG_CAST => Ok(Some(self.static_tables.pg_cast.clone())),
-            PG_CATALOG_TABLE_PG_COLLATION => Ok(Some(self.static_tables.pg_collation.clone())),
-            PG_CATALOG_TABLE_PG_CONVERSION => Ok(Some(self.static_tables.pg_conversion.clone())),
-            PG_CATALOG_TABLE_PG_LANGUAGE => Ok(Some(self.static_tables.pg_language.clone())),
-            PG_CATALOG_TABLE_PG_OPCLASS => Ok(Some(self.static_tables.pg_opclass.clone())),
-            PG_CATALOG_TABLE_PG_OPERATOR => Ok(Some(self.static_tables.pg_operator.clone())),
-            PG_CATALOG_TABLE_PG_OPFAMILY => Ok(Some(self.static_tables.pg_opfamily.clone())),
-            PG_CATALOG_TABLE_PG_PROC => Ok(Some(self.static_tables.pg_proc.clone())),
-            PG_CATALOG_TABLE_PG_RANGE => Ok(Some(self.static_tables.pg_range.clone())),
-            PG_CATALOG_TABLE_PG_TS_CONFIG => Ok(Some(self.static_tables.pg_ts_config.clone())),
-            PG_CATALOG_TABLE_PG_TS_DICT => Ok(Some(self.static_tables.pg_ts_dict.clone())),
-            PG_CATALOG_TABLE_PG_TS_PARSER => Ok(Some(self.static_tables.pg_ts_parser.clone())),
-            PG_CATALOG_TABLE_PG_TS_TEMPLATE => Ok(Some(self.static_tables.pg_ts_template.clone())),
-            PG_CATALOG_TABLE_PG_TYPE => Ok(Some(self.static_tables.pg_type.clone())),
-            PG_CATALOG_TABLE_PG_ATTRDEF => Ok(Some(self.static_tables.pg_attrdef.clone())),
-            PG_CATALOG_TABLE_PG_AUTH_MEMBERS => {
-                Ok(Some(self.static_tables.pg_auth_members.clone()))
-            }
-            PG_CATALOG_TABLE_PG_AUTHID => Ok(Some(self.static_tables.pg_authid.clone())),
-
-            PG_CATALOG_TABLE_PG_CONSTRAINT => Ok(Some(self.static_tables.pg_constraint.clone())),
-
-            PG_CATALOG_TABLE_PG_DB_ROLE_SETTING => {
-                Ok(Some(self.static_tables.pg_db_role_setting.clone()))
-            }
-            PG_CATALOG_TABLE_PG_DEFAULT_ACL => Ok(Some(self.static_tables.pg_default_acl.clone())),
-            PG_CATALOG_TABLE_PG_DEPEND => Ok(Some(self.static_tables.pg_depend.clone())),
-            PG_CATALOG_TABLE_PG_DESCRIPTION => Ok(Some(self.static_tables.pg_description.clone())),
-            PG_CATALOG_TABLE_PG_ENUM => Ok(Some(self.static_tables.pg_enum.clone())),
-            PG_CATALOG_TABLE_PG_EVENT_TRIGGER => {
-                Ok(Some(self.static_tables.pg_event_trigger.clone()))
-            }
-            PG_CATALOG_TABLE_PG_EXTENSION => Ok(Some(self.static_tables.pg_extension.clone())),
-            PG_CATALOG_TABLE_PG_FOREIGN_DATA_WRAPPER => {
-                Ok(Some(self.static_tables.pg_foreign_data_wrapper.clone()))
-            }
-            PG_CATALOG_TABLE_PG_FOREIGN_SERVER => {
-                Ok(Some(self.static_tables.pg_foreign_server.clone()))
-            }
-            PG_CATALOG_TABLE_PG_FOREIGN_TABLE => {
-                Ok(Some(self.static_tables.pg_foreign_table.clone()))
-            }
-            PG_CATALOG_TABLE_PG_INDEX => Ok(Some(self.static_tables.pg_index.clone())),
-            PG_CATALOG_TABLE_PG_INHERITS => Ok(Some(self.static_tables.pg_inherits.clone())),
-            PG_CATALOG_TABLE_PG_INIT_PRIVS => Ok(Some(self.static_tables.pg_init_privs.clone())),
-            PG_CATALOG_TABLE_PG_LARGEOBJECT => Ok(Some(self.static_tables.pg_largeobject.clone())),
-            PG_CATALOG_TABLE_PG_LARGEOBJECT_METADATA => {
-                Ok(Some(self.static_tables.pg_largeobject_metadata.clone()))
-            }
-            PG_CATALOG_TABLE_PG_PARTITIONED_TABLE => {
-                Ok(Some(self.static_tables.pg_partitioned_table.clone()))
-            }
-            PG_CATALOG_TABLE_PG_POLICY => Ok(Some(self.static_tables.pg_policy.clone())),
-            PG_CATALOG_TABLE_PG_PUBLICATION => Ok(Some(self.static_tables.pg_publication.clone())),
-            PG_CATALOG_TABLE_PG_PUBLICATION_NAMESPACE => {
-                Ok(Some(self.static_tables.pg_publication_namespace.clone()))
-            }
-            PG_CATALOG_TABLE_PG_PUBLICATION_REL => {
-                Ok(Some(self.static_tables.pg_publication_rel.clone()))
-            }
-            PG_CATALOG_TABLE_PG_REPLICATION_ORIGIN => {
-                Ok(Some(self.static_tables.pg_replication_origin.clone()))
-            }
-            PG_CATALOG_TABLE_PG_REWRITE => Ok(Some(self.static_tables.pg_rewrite.clone())),
-            PG_CATALOG_TABLE_PG_SECLABEL => Ok(Some(self.static_tables.pg_seclabel.clone())),
-            PG_CATALOG_TABLE_PG_SEQUENCE => Ok(Some(self.static_tables.pg_sequence.clone())),
-            PG_CATALOG_TABLE_PG_SHDEPEND => Ok(Some(self.static_tables.pg_shdepend.clone())),
-            PG_CATALOG_TABLE_PG_SHDESCRIPTION => {
-                Ok(Some(self.static_tables.pg_shdescription.clone()))
-            }
-            PG_CATALOG_TABLE_PG_SHSECLABEL => Ok(Some(self.static_tables.pg_shseclabel.clone())),
-            PG_CATALOG_TABLE_PG_STATISTIC => Ok(Some(self.static_tables.pg_statistic.clone())),
-            PG_CATALOG_TABLE_PG_STATISTIC_EXT => {
-                Ok(Some(self.static_tables.pg_statistic_ext.clone()))
-            }
-            PG_CATALOG_TABLE_PG_STATISTIC_EXT_DATA => {
-                Ok(Some(self.static_tables.pg_statistic_ext_data.clone()))
-            }
-            PG_CATALOG_TABLE_PG_SUBSCRIPTION => {
-                Ok(Some(self.static_tables.pg_subscription.clone()))
-            }
-            PG_CATALOG_TABLE_PG_SUBSCRIPTION_REL => {
-                Ok(Some(self.static_tables.pg_subscription_rel.clone()))
-            }
-            PG_CATALOG_TABLE_PG_TABLESPACE => Ok(Some(self.static_tables.pg_tablespace.clone())),
-            PG_CATALOG_TABLE_PG_TRIGGER => Ok(Some(self.static_tables.pg_trigger.clone())),
-            PG_CATALOG_TABLE_PG_USER_MAPPING => {
-                Ok(Some(self.static_tables.pg_user_mapping.clone()))
-            }
-
-            PG_CATALOG_TABLE_PG_ATTRIBUTE => {
-                let table = Arc::new(pg_attribute::PgAttributeTable::new(
-                    self.catalog_list.clone(),
-                    self.oid_counter.clone(),
-                    self.oid_cache.clone(),
-                ));
-                Ok(Some(Arc::new(StreamingTable::try_new(
-                    Arc::clone(table.schema()),
-                    vec![table],
-                )?)))
-            }
-            PG_CATALOG_TABLE_PG_CLASS => {
-                let table = Arc::new(pg_class::PgClassTable::new(
-                    self.catalog_list.clone(),
-                    self.oid_counter.clone(),
-                    self.oid_cache.clone(),
-                ));
-                Ok(Some(Arc::new(StreamingTable::try_new(
-                    Arc::clone(table.schema()),
-                    vec![table],
-                )?)))
-            }
-            PG_CATALOG_TABLE_PG_DATABASE => {
-                let table = Arc::new(pg_database::PgDatabaseTable::new(
-                    self.catalog_list.clone(),
-                    self.oid_counter.clone(),
-                    self.oid_cache.clone(),
-                ));
-                Ok(Some(Arc::new(StreamingTable::try_new(
-                    Arc::clone(table.schema()),
-                    vec![table],
-                )?)))
-            }
-            PG_CATALOG_TABLE_PG_NAMESPACE => {
-                let table = Arc::new(pg_namespace::PgNamespaceTable::new(
-                    self.catalog_list.clone(),
-                    self.oid_counter.clone(),
-                    self.oid_cache.clone(),
-                ));
-                Ok(Some(Arc::new(StreamingTable::try_new(
-                    Arc::clone(table.schema()),
-                    vec![table],
-                )?)))
-            }
-            PG_CATALOG_VIEW_PG_STAT_GSSAPI => {
-                let table = Arc::new(pg_stat_gssapi::PgStatGssApiTable::new());
-                Ok(Some(Arc::new(StreamingTable::try_new(
-                    Arc::clone(table.schema()),
-                    vec![table],
-                )?)))
-            }
-            PG_CATALOG_VIEW_PG_ROLES => {
-                let table = Arc::new(pg_roles::PgRolesTable::new(Arc::clone(&self.auth_manager)));
-                Ok(Some(Arc::new(StreamingTable::try_new(
-                    Arc::clone(table.schema()),
-                    vec![table],
-                )?)))
-            }
-            PG_CATALOG_VIEW_PG_TABLES => {
-                let table = Arc::new(pg_tables::PgTablesTable::new(self.catalog_list.clone()));
-                Ok(Some(Arc::new(StreamingTable::try_new(
-                    Arc::clone(table.schema()),
-                    vec![table],
-                )?)))
-            }
-            PG_CATALOG_VIEW_PG_SETTINGS => {
-                let table = pg_settings::PgSettingsView::try_new()?;
-                Ok(Some(Arc::new(table.try_into_memtable()?)))
-            }
-            PG_CATALOG_VIEW_PG_VIEWS => Ok(Some(Arc::new(pg_views::pg_views()?))),
-            PG_CATALOG_VIEW_PG_MATVIEWS => Ok(Some(Arc::new(pg_views::pg_matviews()?))),
-            PG_CATALOG_VIEW_PG_STAT_USER_TABLES => {
-                Ok(Some(Arc::new(pg_views::pg_stat_user_tables()?)))
-            }
-            PG_CATALOG_VIEW_PG_REPLICATION_SLOTS => {
-                let table = pg_replication_slot::pg_replication_slots()?;
-                Ok(Some(table))
-            }
-            _ => Ok(None),
+        if let Some(table) = self.build_table_by_name(name)? {
+            let table_provider = table.try_into_table_provider()?;
+            Ok(Some(table_provider))
+        } else {
+            Ok(None)
         }
     }
 
@@ -403,11 +238,200 @@ impl<C: CatalogInfo> PgCatalogSchemaProvider<C> {
             auth_manager,
         })
     }
+
+    pub fn build_table_by_name(&self, name: &str) -> Result<Option<PgCatalogTable>> {
+        match name.to_ascii_lowercase().as_str() {
+            PG_CATALOG_TABLE_PG_AGGREGATE => {
+                Ok(Some(self.static_tables.pg_aggregate.clone().into()))
+            }
+            PG_CATALOG_TABLE_PG_AM => Ok(Some(self.static_tables.pg_am.clone().into())),
+            PG_CATALOG_TABLE_PG_AMOP => Ok(Some(self.static_tables.pg_amop.clone().into())),
+            PG_CATALOG_TABLE_PG_AMPROC => Ok(Some(self.static_tables.pg_amproc.clone().into())),
+            PG_CATALOG_TABLE_PG_CAST => Ok(Some(self.static_tables.pg_cast.clone().into())),
+            PG_CATALOG_TABLE_PG_COLLATION => {
+                Ok(Some(self.static_tables.pg_collation.clone().into()))
+            }
+            PG_CATALOG_TABLE_PG_CONVERSION => {
+                Ok(Some(self.static_tables.pg_conversion.clone().into()))
+            }
+            PG_CATALOG_TABLE_PG_LANGUAGE => Ok(Some(self.static_tables.pg_language.clone().into())),
+            PG_CATALOG_TABLE_PG_OPCLASS => Ok(Some(self.static_tables.pg_opclass.clone().into())),
+            PG_CATALOG_TABLE_PG_OPERATOR => Ok(Some(self.static_tables.pg_operator.clone().into())),
+            PG_CATALOG_TABLE_PG_OPFAMILY => Ok(Some(self.static_tables.pg_opfamily.clone().into())),
+            PG_CATALOG_TABLE_PG_PROC => Ok(Some(self.static_tables.pg_proc.clone().into())),
+            PG_CATALOG_TABLE_PG_RANGE => Ok(Some(self.static_tables.pg_range.clone().into())),
+            PG_CATALOG_TABLE_PG_TS_CONFIG => {
+                Ok(Some(self.static_tables.pg_ts_config.clone().into()))
+            }
+            PG_CATALOG_TABLE_PG_TS_DICT => Ok(Some(self.static_tables.pg_ts_dict.clone().into())),
+            PG_CATALOG_TABLE_PG_TS_PARSER => {
+                Ok(Some(self.static_tables.pg_ts_parser.clone().into()))
+            }
+            PG_CATALOG_TABLE_PG_TS_TEMPLATE => {
+                Ok(Some(self.static_tables.pg_ts_template.clone().into()))
+            }
+            PG_CATALOG_TABLE_PG_TYPE => Ok(Some(self.static_tables.pg_type.clone().into())),
+            PG_CATALOG_TABLE_PG_ATTRDEF => Ok(Some(self.static_tables.pg_attrdef.clone().into())),
+            PG_CATALOG_TABLE_PG_AUTH_MEMBERS => {
+                Ok(Some(self.static_tables.pg_auth_members.clone().into()))
+            }
+            PG_CATALOG_TABLE_PG_AUTHID => Ok(Some(self.static_tables.pg_authid.clone().into())),
+
+            PG_CATALOG_TABLE_PG_CONSTRAINT => {
+                Ok(Some(self.static_tables.pg_constraint.clone().into()))
+            }
+
+            PG_CATALOG_TABLE_PG_DB_ROLE_SETTING => {
+                Ok(Some(self.static_tables.pg_db_role_setting.clone().into()))
+            }
+            PG_CATALOG_TABLE_PG_DEFAULT_ACL => {
+                Ok(Some(self.static_tables.pg_default_acl.clone().into()))
+            }
+            PG_CATALOG_TABLE_PG_DEPEND => Ok(Some(self.static_tables.pg_depend.clone().into())),
+            PG_CATALOG_TABLE_PG_DESCRIPTION => {
+                Ok(Some(self.static_tables.pg_description.clone().into()))
+            }
+            PG_CATALOG_TABLE_PG_ENUM => Ok(Some(self.static_tables.pg_enum.clone().into())),
+            PG_CATALOG_TABLE_PG_EVENT_TRIGGER => {
+                Ok(Some(self.static_tables.pg_event_trigger.clone().into()))
+            }
+            PG_CATALOG_TABLE_PG_EXTENSION => {
+                Ok(Some(self.static_tables.pg_extension.clone().into()))
+            }
+            PG_CATALOG_TABLE_PG_FOREIGN_DATA_WRAPPER => Ok(Some(
+                self.static_tables.pg_foreign_data_wrapper.clone().into(),
+            )),
+            PG_CATALOG_TABLE_PG_FOREIGN_SERVER => {
+                Ok(Some(self.static_tables.pg_foreign_server.clone().into()))
+            }
+            PG_CATALOG_TABLE_PG_FOREIGN_TABLE => {
+                Ok(Some(self.static_tables.pg_foreign_table.clone().into()))
+            }
+            PG_CATALOG_TABLE_PG_INDEX => Ok(Some(self.static_tables.pg_index.clone().into())),
+            PG_CATALOG_TABLE_PG_INHERITS => Ok(Some(self.static_tables.pg_inherits.clone().into())),
+            PG_CATALOG_TABLE_PG_INIT_PRIVS => {
+                Ok(Some(self.static_tables.pg_init_privs.clone().into()))
+            }
+            PG_CATALOG_TABLE_PG_LARGEOBJECT => {
+                Ok(Some(self.static_tables.pg_largeobject.clone().into()))
+            }
+            PG_CATALOG_TABLE_PG_LARGEOBJECT_METADATA => Ok(Some(
+                self.static_tables.pg_largeobject_metadata.clone().into(),
+            )),
+            PG_CATALOG_TABLE_PG_PARTITIONED_TABLE => {
+                Ok(Some(self.static_tables.pg_partitioned_table.clone().into()))
+            }
+            PG_CATALOG_TABLE_PG_POLICY => Ok(Some(self.static_tables.pg_policy.clone().into())),
+            PG_CATALOG_TABLE_PG_PUBLICATION => {
+                Ok(Some(self.static_tables.pg_publication.clone().into()))
+            }
+            PG_CATALOG_TABLE_PG_PUBLICATION_NAMESPACE => Ok(Some(
+                self.static_tables.pg_publication_namespace.clone().into(),
+            )),
+            PG_CATALOG_TABLE_PG_PUBLICATION_REL => {
+                Ok(Some(self.static_tables.pg_publication_rel.clone().into()))
+            }
+            PG_CATALOG_TABLE_PG_REPLICATION_ORIGIN => Ok(Some(
+                self.static_tables.pg_replication_origin.clone().into(),
+            )),
+            PG_CATALOG_TABLE_PG_REWRITE => Ok(Some(self.static_tables.pg_rewrite.clone().into())),
+            PG_CATALOG_TABLE_PG_SECLABEL => Ok(Some(self.static_tables.pg_seclabel.clone().into())),
+            PG_CATALOG_TABLE_PG_SEQUENCE => Ok(Some(self.static_tables.pg_sequence.clone().into())),
+            PG_CATALOG_TABLE_PG_SHDEPEND => Ok(Some(self.static_tables.pg_shdepend.clone().into())),
+            PG_CATALOG_TABLE_PG_SHDESCRIPTION => {
+                Ok(Some(self.static_tables.pg_shdescription.clone().into()))
+            }
+            PG_CATALOG_TABLE_PG_SHSECLABEL => {
+                Ok(Some(self.static_tables.pg_shseclabel.clone().into()))
+            }
+            PG_CATALOG_TABLE_PG_STATISTIC => {
+                Ok(Some(self.static_tables.pg_statistic.clone().into()))
+            }
+            PG_CATALOG_TABLE_PG_STATISTIC_EXT => {
+                Ok(Some(self.static_tables.pg_statistic_ext.clone().into()))
+            }
+            PG_CATALOG_TABLE_PG_STATISTIC_EXT_DATA => Ok(Some(
+                self.static_tables.pg_statistic_ext_data.clone().into(),
+            )),
+            PG_CATALOG_TABLE_PG_SUBSCRIPTION => {
+                Ok(Some(self.static_tables.pg_subscription.clone().into()))
+            }
+            PG_CATALOG_TABLE_PG_SUBSCRIPTION_REL => {
+                Ok(Some(self.static_tables.pg_subscription_rel.clone().into()))
+            }
+            PG_CATALOG_TABLE_PG_TABLESPACE => {
+                Ok(Some(self.static_tables.pg_tablespace.clone().into()))
+            }
+            PG_CATALOG_TABLE_PG_TRIGGER => Ok(Some(self.static_tables.pg_trigger.clone().into())),
+            PG_CATALOG_TABLE_PG_USER_MAPPING => {
+                Ok(Some(self.static_tables.pg_user_mapping.clone().into()))
+            }
+
+            PG_CATALOG_TABLE_PG_ATTRIBUTE => {
+                let table = Arc::new(pg_attribute::PgAttributeTable::new(
+                    self.catalog_list.clone(),
+                    self.oid_counter.clone(),
+                    self.oid_cache.clone(),
+                ));
+                Ok(Some(PgCatalogTable::Dynamic(table)))
+            }
+            PG_CATALOG_TABLE_PG_CLASS => {
+                let table = Arc::new(pg_class::PgClassTable::new(
+                    self.catalog_list.clone(),
+                    self.oid_counter.clone(),
+                    self.oid_cache.clone(),
+                ));
+                Ok(Some(PgCatalogTable::Dynamic(table)))
+            }
+            PG_CATALOG_TABLE_PG_DATABASE => {
+                let table = Arc::new(pg_database::PgDatabaseTable::new(
+                    self.catalog_list.clone(),
+                    self.oid_counter.clone(),
+                    self.oid_cache.clone(),
+                ));
+                Ok(Some(PgCatalogTable::Dynamic(table)))
+            }
+            PG_CATALOG_TABLE_PG_NAMESPACE => {
+                let table = Arc::new(pg_namespace::PgNamespaceTable::new(
+                    self.catalog_list.clone(),
+                    self.oid_counter.clone(),
+                    self.oid_cache.clone(),
+                ));
+                Ok(Some(PgCatalogTable::Dynamic(table)))
+            }
+            PG_CATALOG_VIEW_PG_TABLES => {
+                let table = Arc::new(pg_tables::PgTablesTable::new(self.catalog_list.clone()));
+                Ok(Some(PgCatalogTable::Dynamic(table)))
+            }
+            PG_CATALOG_VIEW_PG_SETTINGS => {
+                let table = Arc::new(pg_settings::PgSettingsView::new());
+                Ok(Some(PgCatalogTable::Dynamic(table)))
+            }
+
+            PG_CATALOG_VIEW_PG_STAT_GSSAPI => {
+                let table = Arc::new(pg_stat_gssapi::PgStatGssApiTable::new());
+                Ok(Some(PgCatalogTable::Dynamic(table)))
+            }
+            PG_CATALOG_VIEW_PG_ROLES => {
+                let table = Arc::new(pg_roles::PgRolesTable::new(Arc::clone(&self.auth_manager)));
+                Ok(Some(PgCatalogTable::Dynamic(table)))
+            }
+
+            PG_CATALOG_VIEW_PG_VIEWS => Ok(Some(pg_views::pg_views().into())),
+            PG_CATALOG_VIEW_PG_MATVIEWS => Ok(Some(pg_views::pg_matviews().into())),
+            PG_CATALOG_VIEW_PG_STAT_USER_TABLES => Ok(Some(pg_views::pg_stat_user_tables().into())),
+            PG_CATALOG_VIEW_PG_REPLICATION_SLOTS => {
+                Ok(Some(pg_replication_slot::pg_replication_slots().into()))
+            }
+
+            _ => Ok(None),
+        }
+    }
 }
 
 /// A table that reads data from Avro bytes
 #[derive(Debug, Clone)]
-struct ArrowTable {
+pub struct ArrowTable {
     schema: SchemaRef,
     data: Vec<RecordBatch>,
 }
@@ -433,15 +457,71 @@ impl ArrowTable {
     }
 
     /// Convert the arrow data into datafusion MemTable
-    pub fn try_into_memtable(self) -> Result<MemTable> {
-        MemTable::try_new(self.schema, vec![self.data])
+    pub fn try_into_memtable(&self) -> Result<Arc<MemTable>> {
+        let mem_table = MemTable::try_new(self.schema.clone(), vec![self.data.clone()])?;
+        Ok(Arc::new(mem_table))
+    }
+
+    pub fn data(&self) -> &[RecordBatch] {
+        &self.data
+    }
+
+    pub fn schema(&self) -> SchemaRef {
+        self.schema.clone()
     }
 }
 
 impl TableFunctionImpl for ArrowTable {
     fn call(&self, _args: &[Expr]) -> Result<Arc<dyn TableProvider>> {
-        let table = self.clone().try_into_memtable()?;
-        Ok(Arc::new(table))
+        let table = self.try_into_memtable()?;
+        Ok(table)
+    }
+}
+
+/// an enum to wrap all kinds of tables
+pub enum PgCatalogTable {
+    Static(Arc<ArrowTable>),
+    Dynamic(Arc<dyn PartitionStream>),
+    Empty(EmptyTable),
+}
+
+impl From<Arc<ArrowTable>> for PgCatalogTable {
+    fn from(t: Arc<ArrowTable>) -> PgCatalogTable {
+        PgCatalogTable::Static(t)
+    }
+}
+
+impl From<EmptyTable> for PgCatalogTable {
+    fn from(t: EmptyTable) -> PgCatalogTable {
+        Self::Empty(t)
+    }
+}
+
+impl PgCatalogTable {
+    pub fn try_into_table_provider(&self) -> Result<Arc<dyn TableProvider>> {
+        match self {
+            Self::Static(t) => {
+                let memtable = t.try_into_memtable()?;
+                Ok(memtable)
+            }
+            Self::Dynamic(t) => {
+                let streaming_table =
+                    StreamingTable::try_new(Arc::clone(t.schema()), vec![t.clone()])?;
+                Ok(Arc::new(streaming_table))
+            }
+            Self::Empty(t) => {
+                let memtable = t.try_into_memtable()?;
+                Ok(memtable)
+            }
+        }
+    }
+
+    pub fn schema(&self) -> SchemaRef {
+        match self {
+            Self::Static(t) => t.schema(),
+            Self::Dynamic(t) => t.schema().clone(),
+            Self::Empty(t) => t.schema(),
+        }
     }
 }
 
@@ -450,65 +530,65 @@ impl TableFunctionImpl for ArrowTable {
 /// This implementation only contains static tables
 #[derive(Debug, Clone)]
 pub struct PgCatalogStaticTables {
-    pub pg_aggregate: Arc<dyn TableProvider>,
-    pub pg_am: Arc<dyn TableProvider>,
-    pub pg_amop: Arc<dyn TableProvider>,
-    pub pg_amproc: Arc<dyn TableProvider>,
-    pub pg_cast: Arc<dyn TableProvider>,
-    pub pg_collation: Arc<dyn TableProvider>,
-    pub pg_conversion: Arc<dyn TableProvider>,
-    pub pg_language: Arc<dyn TableProvider>,
-    pub pg_opclass: Arc<dyn TableProvider>,
-    pub pg_operator: Arc<dyn TableProvider>,
-    pub pg_opfamily: Arc<dyn TableProvider>,
-    pub pg_proc: Arc<dyn TableProvider>,
-    pub pg_range: Arc<dyn TableProvider>,
-    pub pg_ts_config: Arc<dyn TableProvider>,
-    pub pg_ts_dict: Arc<dyn TableProvider>,
-    pub pg_ts_parser: Arc<dyn TableProvider>,
-    pub pg_ts_template: Arc<dyn TableProvider>,
-    pub pg_type: Arc<dyn TableProvider>,
-    pub pg_attrdef: Arc<dyn TableProvider>,
-    pub pg_auth_members: Arc<dyn TableProvider>,
-    pub pg_authid: Arc<dyn TableProvider>,
-    pub pg_constraint: Arc<dyn TableProvider>,
-    pub pg_db_role_setting: Arc<dyn TableProvider>,
-    pub pg_default_acl: Arc<dyn TableProvider>,
-    pub pg_depend: Arc<dyn TableProvider>,
-    pub pg_description: Arc<dyn TableProvider>,
-    pub pg_enum: Arc<dyn TableProvider>,
-    pub pg_event_trigger: Arc<dyn TableProvider>,
-    pub pg_extension: Arc<dyn TableProvider>,
-    pub pg_foreign_data_wrapper: Arc<dyn TableProvider>,
-    pub pg_foreign_server: Arc<dyn TableProvider>,
-    pub pg_foreign_table: Arc<dyn TableProvider>,
-    pub pg_index: Arc<dyn TableProvider>,
-    pub pg_inherits: Arc<dyn TableProvider>,
-    pub pg_init_privs: Arc<dyn TableProvider>,
-    pub pg_largeobject: Arc<dyn TableProvider>,
-    pub pg_largeobject_metadata: Arc<dyn TableProvider>,
-    pub pg_partitioned_table: Arc<dyn TableProvider>,
-    pub pg_policy: Arc<dyn TableProvider>,
-    pub pg_publication: Arc<dyn TableProvider>,
-    pub pg_publication_namespace: Arc<dyn TableProvider>,
-    pub pg_publication_rel: Arc<dyn TableProvider>,
-    pub pg_replication_origin: Arc<dyn TableProvider>,
-    pub pg_rewrite: Arc<dyn TableProvider>,
-    pub pg_seclabel: Arc<dyn TableProvider>,
-    pub pg_sequence: Arc<dyn TableProvider>,
-    pub pg_shdepend: Arc<dyn TableProvider>,
-    pub pg_shdescription: Arc<dyn TableProvider>,
-    pub pg_shseclabel: Arc<dyn TableProvider>,
-    pub pg_statistic: Arc<dyn TableProvider>,
-    pub pg_statistic_ext: Arc<dyn TableProvider>,
-    pub pg_statistic_ext_data: Arc<dyn TableProvider>,
-    pub pg_subscription: Arc<dyn TableProvider>,
-    pub pg_subscription_rel: Arc<dyn TableProvider>,
-    pub pg_tablespace: Arc<dyn TableProvider>,
-    pub pg_trigger: Arc<dyn TableProvider>,
-    pub pg_user_mapping: Arc<dyn TableProvider>,
+    pub pg_aggregate: Arc<ArrowTable>,
+    pub pg_am: Arc<ArrowTable>,
+    pub pg_amop: Arc<ArrowTable>,
+    pub pg_amproc: Arc<ArrowTable>,
+    pub pg_cast: Arc<ArrowTable>,
+    pub pg_collation: Arc<ArrowTable>,
+    pub pg_conversion: Arc<ArrowTable>,
+    pub pg_language: Arc<ArrowTable>,
+    pub pg_opclass: Arc<ArrowTable>,
+    pub pg_operator: Arc<ArrowTable>,
+    pub pg_opfamily: Arc<ArrowTable>,
+    pub pg_proc: Arc<ArrowTable>,
+    pub pg_range: Arc<ArrowTable>,
+    pub pg_ts_config: Arc<ArrowTable>,
+    pub pg_ts_dict: Arc<ArrowTable>,
+    pub pg_ts_parser: Arc<ArrowTable>,
+    pub pg_ts_template: Arc<ArrowTable>,
+    pub pg_type: Arc<ArrowTable>,
+    pub pg_attrdef: Arc<ArrowTable>,
+    pub pg_auth_members: Arc<ArrowTable>,
+    pub pg_authid: Arc<ArrowTable>,
+    pub pg_constraint: Arc<ArrowTable>,
+    pub pg_db_role_setting: Arc<ArrowTable>,
+    pub pg_default_acl: Arc<ArrowTable>,
+    pub pg_depend: Arc<ArrowTable>,
+    pub pg_description: Arc<ArrowTable>,
+    pub pg_enum: Arc<ArrowTable>,
+    pub pg_event_trigger: Arc<ArrowTable>,
+    pub pg_extension: Arc<ArrowTable>,
+    pub pg_foreign_data_wrapper: Arc<ArrowTable>,
+    pub pg_foreign_server: Arc<ArrowTable>,
+    pub pg_foreign_table: Arc<ArrowTable>,
+    pub pg_index: Arc<ArrowTable>,
+    pub pg_inherits: Arc<ArrowTable>,
+    pub pg_init_privs: Arc<ArrowTable>,
+    pub pg_largeobject: Arc<ArrowTable>,
+    pub pg_largeobject_metadata: Arc<ArrowTable>,
+    pub pg_partitioned_table: Arc<ArrowTable>,
+    pub pg_policy: Arc<ArrowTable>,
+    pub pg_publication: Arc<ArrowTable>,
+    pub pg_publication_namespace: Arc<ArrowTable>,
+    pub pg_publication_rel: Arc<ArrowTable>,
+    pub pg_replication_origin: Arc<ArrowTable>,
+    pub pg_rewrite: Arc<ArrowTable>,
+    pub pg_seclabel: Arc<ArrowTable>,
+    pub pg_sequence: Arc<ArrowTable>,
+    pub pg_shdepend: Arc<ArrowTable>,
+    pub pg_shdescription: Arc<ArrowTable>,
+    pub pg_shseclabel: Arc<ArrowTable>,
+    pub pg_statistic: Arc<ArrowTable>,
+    pub pg_statistic_ext: Arc<ArrowTable>,
+    pub pg_statistic_ext_data: Arc<ArrowTable>,
+    pub pg_subscription: Arc<ArrowTable>,
+    pub pg_subscription_rel: Arc<ArrowTable>,
+    pub pg_tablespace: Arc<ArrowTable>,
+    pub pg_trigger: Arc<ArrowTable>,
+    pub pg_user_mapping: Arc<ArrowTable>,
 
-    pub pg_get_keywords: Arc<dyn TableFunctionImpl>,
+    pub pg_get_keywords: Arc<ArrowTable>,
 }
 
 impl PgCatalogStaticTables {
@@ -915,7 +995,7 @@ impl PgCatalogStaticTables {
                 .to_vec(),
             )?,
 
-            pg_get_keywords: Self::create_arrow_table_function(
+            pg_get_keywords: Self::create_arrow_table(
                 include_bytes!(concat!(
                     env!("CARGO_MANIFEST_DIR"),
                     "/pg_catalog_arrow_exports/pg_get_keywords.feather"
@@ -926,15 +1006,8 @@ impl PgCatalogStaticTables {
     }
 
     /// Create table from dumped arrow data
-    fn create_arrow_table(data_bytes: Vec<u8>) -> Result<Arc<dyn TableProvider>> {
-        let table = ArrowTable::from_ipc_data(data_bytes)?;
-        let mem_table = table.try_into_memtable()?;
-        Ok(Arc::new(mem_table))
-    }
-
-    fn create_arrow_table_function(data_bytes: Vec<u8>) -> Result<Arc<dyn TableFunctionImpl>> {
-        let table = ArrowTable::from_ipc_data(data_bytes)?;
-        Ok(Arc::new(table))
+    fn create_arrow_table(data_bytes: Vec<u8>) -> Result<Arc<ArrowTable>> {
+        ArrowTable::from_ipc_data(data_bytes).map(Arc::new)
     }
 }
 

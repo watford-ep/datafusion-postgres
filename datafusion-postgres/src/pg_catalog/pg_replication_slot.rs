@@ -1,10 +1,8 @@
 use crate::pg_catalog::empty_table::EmptyTable;
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
-use datafusion::catalog::TableProvider;
-use datafusion::error::Result;
 use std::sync::Arc;
 
-pub(crate) fn pg_replication_slots() -> Result<Arc<dyn TableProvider>> {
+pub(crate) fn pg_replication_slots() -> EmptyTable {
     let schema = Arc::new(Schema::new(vec![
         Field::new("slot_name", DataType::Utf8, true),
         Field::new("plugin", DataType::Utf8, true),
@@ -24,7 +22,5 @@ pub(crate) fn pg_replication_slots() -> Result<Arc<dyn TableProvider>> {
         Field::new("conflicting", DataType::Boolean, false),
     ]));
 
-    let table = EmptyTable::new(schema).try_into_memtable()?;
-
-    Ok(Arc::new(table))
+    EmptyTable::new(schema)
 }
