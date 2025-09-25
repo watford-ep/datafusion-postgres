@@ -342,7 +342,7 @@ dependencies = [
 
 [[package]]
 name = "arrow-pg"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "arrow",
  "bytes",
