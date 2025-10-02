@@ -460,7 +460,7 @@ impl PgCatalogContextProvider for AuthManager {
 
 /// AuthSource implementation for integration with pgwire authentication
 /// Provides proper password-based authentication instead of custom startup handler
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct DfAuthSource {
     pub auth_manager: Arc<AuthManager>,
 }
@@ -550,6 +550,7 @@ impl AuthSource for DfAuthSource {
 // ```
 
 /// Simple AuthSource implementation that accepts any user with empty password
+#[derive(Debug)]
 pub struct SimpleAuthSource {
     auth_manager: Arc<AuthManager>,
 }

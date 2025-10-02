@@ -209,7 +209,7 @@ impl DfSessionService {
         ResourceType::All
     }
 
-    fn mock_show_response<'a>(name: &str, value: &str) -> PgWireResult<QueryResponse<'a>> {
+    fn mock_show_response(name: &str, value: &str) -> PgWireResult<QueryResponse> {
         let fields = vec![FieldInfo::new(
             name.to_string(),
             None,
@@ -228,11 +228,11 @@ impl DfSessionService {
         Ok(QueryResponse::new(Arc::new(fields), Box::pin(row_stream)))
     }
 
-    async fn try_respond_set_statements<'a, C>(
+    async fn try_respond_set_statements<C>(
         &self,
         client: &mut C,
         query_lower: &str,
-    ) -> PgWireResult<Option<Response<'a>>>
+    ) -> PgWireResult<Option<Response>>
     where
         C: ClientInfo,
     {
@@ -310,11 +310,11 @@ impl DfSessionService {
         }
     }
 
-    async fn try_respond_transaction_statements<'a, C>(
+    async fn try_respond_transaction_statements<C>(
         &self,
         client: &C,
         query_lower: &str,
-    ) -> PgWireResult<Option<Response<'a>>>
+    ) -> PgWireResult<Option<Response>>
     where
         C: ClientInfo,
     {
@@ -361,11 +361,11 @@ impl DfSessionService {
         }
     }
 
-    async fn try_respond_show_statements<'a, C>(
+    async fn try_respond_show_statements<C>(
         &self,
         client: &C,
         query_lower: &str,
-    ) -> PgWireResult<Option<Response<'a>>>
+    ) -> PgWireResult<Option<Response>>
     where
         C: ClientInfo,
     {
@@ -423,7 +423,7 @@ impl DfSessionService {
 
 #[async_trait]
 impl SimpleQueryHandler for DfSessionService {
-    async fn do_query<'a, C>(&self, client: &mut C, query: &str) -> PgWireResult<Vec<Response<'a>>>
+    async fn do_query<C>(&self, client: &mut C, query: &str) -> PgWireResult<Vec<Response>>
     where
         C: ClientInfo + Unpin + Send + Sync,
     {
@@ -599,12 +599,12 @@ impl ExtendedQueryHandler for DfSessionService {
         Ok(DescribePortalResponse::new(fields))
     }
 
-    async fn do_query<'a, C>(
+    async fn do_query<C>(
         &self,
         client: &mut C,
         portal: &Portal<Self::Statement>,
         _max_rows: usize,
-    ) -> PgWireResult<Response<'a>>
+    ) -> PgWireResult<Response>
     where
         C: ClientInfo + Unpin + Send + Sync,
     {
