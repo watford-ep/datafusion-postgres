@@ -2,7 +2,6 @@ use std::{collections::HashMap, sync::Arc};
 
 use datafusion::prelude::SessionContext;
 use datafusion_pg_catalog::pg_catalog::setup_pg_catalog;
-use datafusion_postgres::{auth::AuthManager, DfSessionService};
 use futures::Sink;
 use pgwire::{
     api::{ClientInfo, ClientPortalStore, PgWireConnectionState, METADATA_USER},
@@ -10,6 +9,8 @@ use pgwire::{
         response::TransactionStatus, startup::SecretKey, PgWireBackendMessage, ProtocolVersion,
     },
 };
+
+use crate::{auth::AuthManager, DfSessionService};
 
 pub fn setup_handlers() -> DfSessionService {
     let session_context = SessionContext::new();
@@ -20,11 +21,7 @@ pub fn setup_handlers() -> DfSessionService {
     )
     .expect("Failed to setup sesession context");
 
-    DfSessionService::new(
-        Arc::new(session_context),
-        Arc::new(AuthManager::new()),
-        vec![],
-    )
+    DfSessionService::new(Arc::new(session_context), Arc::new(AuthManager::new()))
 }
 
 #[derive(Debug, Default)]
