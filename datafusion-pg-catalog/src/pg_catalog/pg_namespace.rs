@@ -66,11 +66,35 @@ impl<C: CatalogInfo> PgNamespaceTable<C> {
             if let Some(schema_names) = this.catalog_list.schema_names(&catalog_name).await? {
                 for schema_name in schema_names {
                     let cache_key = OidCacheKey::Schema(catalog_name.clone(), schema_name.clone());
-                    let schema_oid = if let Some(oid) = oid_cache.get(&cache_key) {
+
+                    // If schema is the Postgres pg_catalog, assign fixed OID 11 so
+                    // other tables that reference pg_catalog by OID continue to work.
+                    let schema_oid = if schema_name == "pg_catalog" {
+                        let reserved_oid: u32 = 11;
+
+                        let collision = oid_cache.values().any(|v| *v == reserved_oid);
+                        if collision {
+                            return Err(datafusion::error::DataFusionError::Execution(format!(
+                                "reserved OID {} already assigned to another object; cannot assign to pg_catalog",
+                                reserved_oid
+                            )));
+                        } else {
+                            // Ensure the global counter is ahead of reserved_oid so it
+                            // won't hand out the same value later.
+                            loop {
+                                let prev = this.oid_counter.load(Ordering::Relaxed);
+                                if prev > reserved_oid || this.oid_counter.compare_exchange(prev, reserved_oid + 1, Ordering::Relaxed, Ordering::Relaxed).is_ok() {
+                                    break;
+                                }
+                            }
+                            reserved_oid
+                        }
+                    } else if let Some(oid) = oid_cache.get(&cache_key) {
                         *oid
                     } else {
                         this.oid_counter.fetch_add(1, Ordering::Relaxed)
                     };
+
                     schema_oid_cache.insert(cache_key, schema_oid);
 
                     oids.push(schema_oid as i32);

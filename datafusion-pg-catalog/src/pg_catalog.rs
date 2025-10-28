@@ -183,7 +183,7 @@ pub const PG_CATALOG_TABLES: &[&str] = &[
     PG_CATALOG_VIEW_PG_REPLICATION_SLOTS,
 ];
 
-#[derive(Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Hash, Eq, PartialEq, PartialOrd, Ord)]
 pub(crate) enum OidCacheKey {
     Catalog(String),
     Schema(String, String),
