@@ -771,6 +771,48 @@ impl SqlStatementRewriteRule for FixCollate {
     }
 }
 
+/// Parenthesize IN / NOT IN clauses to make DataFusion parse them the same as
+/// parenthesized variants. Some SQL like `x IN ('a','b') OR (x='y')` is
+/// interpreted differently by DataFusion unless the IN clause itself is
+/// parenthesized. This rule wraps `Expr::InList` and `Expr::InSubquery` with
+/// `Expr::Nested(...)` when they are not already nested.
+#[derive(Debug)]
+pub struct ParenthesizeInClauses;
+
+struct ParenthesizeInClausesVisitor;
+
+impl VisitorMut for ParenthesizeInClausesVisitor {
+    type Break = ();
+
+    fn post_visit_expr(&mut self, expr: &mut Expr) -> ControlFlow<Self::Break> {
+        match expr {
+            // If it's already a nested expression, nothing to do.
+            Expr::Nested(_) => {}
+
+            // For IN list / NOT IN list, wrap into Nested so formatting will
+            // include parentheses around the clause when printed. Doing this in
+            // post_visit ensures we don't repeatedly wrap the same node as the
+            // visitor descends.
+            Expr::InList { .. } | Expr::InSubquery { .. } => {
+                let inner = expr.clone();
+                *expr = Expr::Nested(Box::new(inner));
+            }
+
+            _ => {}
+        }
+
+        ControlFlow::Continue(())
+    }
+}
+
+impl SqlStatementRewriteRule for ParenthesizeInClauses {
+    fn rewrite(&self, mut s: Statement) -> Statement {
+        let mut visitor = ParenthesizeInClausesVisitor;
+        let _ = s.visit(&mut visitor);
+        s
+    }
+}
+
 /// Datafusion doesn't support subquery on projection
 #[derive(Debug)]
 pub struct RemoveSubqueryFromProjection;
@@ -1245,5 +1287,31 @@ mod tests {
         assert_rewrite!(&rules, "SELECT version() as foo", "SELECT version() AS foo");
         assert_rewrite!(&rules, "SELECT version(foo)", "SELECT version(foo)");
         assert_rewrite!(&rules, "SELECT foo.version()", "SELECT foo.version()");
+    }
+
+    #[test]
+    fn test_parenthesize_in_clauses() {
+        let rules: Vec<Arc<dyn SqlStatementRewriteRule>> = vec![Arc::new(ParenthesizeInClauses)];
+
+        // IN clause without outer parentheses should be wrapped
+        assert_rewrite!(
+            &rules,
+            "SELECT * FROM tbl WHERE x IN ('a', 'b', 'c') OR (x = 'y')",
+            "SELECT * FROM tbl WHERE (x IN ('a', 'b', 'c')) OR (x = 'y')"
+        );
+
+        // NOT IN also should be wrapped
+        assert_rewrite!(
+            &rules,
+            "SELECT * FROM tbl WHERE x NOT IN ('a', 'b') OR x = 'z'",
+            "SELECT * FROM tbl WHERE (x NOT IN ('a', 'b')) OR x = 'z'"
+        );
+
+        // IN with subquery
+        assert_rewrite!(
+            &rules,
+            "SELECT * FROM tbl WHERE x IN (SELECT id FROM other) OR x = 'z'",
+            "SELECT * FROM tbl WHERE (x IN (SELECT id FROM other)) OR x = 'z'"
+        );
     }
 }
