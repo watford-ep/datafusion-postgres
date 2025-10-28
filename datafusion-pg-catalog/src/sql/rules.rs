@@ -812,6 +812,87 @@ impl SqlStatementRewriteRule for RemoveSubqueryFromProjection {
     }
 }
 
+/// Wrap correlated scalar subqueries with MAX() aggregation
+///
+/// DataFusion requires correlated scalar subqueries to be aggregated to ensure
+/// they return at most one row. This rule wraps subqueries found in CASE
+/// expressions with MAX() to satisfy this requirement.
+///
+/// This is particularly needed for PostgreSQL compatibility where queries like:
+/// ```sql
+/// CASE WHEN condition THEN (SELECT col FROM table WHERE correlated_condition)
+/// ```
+/// are valid and guaranteed to return a single row by the WHERE clause, but
+/// DataFusion still requires explicit aggregation.
+#[derive(Debug)]
+pub struct WrapCorrelatedSubqueriesWithMax;
+
+struct WrapCorrelatedSubqueriesWithMaxVisitor;
+
+impl WrapCorrelatedSubqueriesWithMaxVisitor {
+    /// Wraps a SELECT query with MAX() aggregation
+    fn wrap_select_with_max(query: &mut Box<Query>) {
+        if let SetExpr::Select(select) = query.body.as_mut() {
+            // Only wrap if there's a single projection item
+            if select.projection.len() == 1 {
+                if let Some(SelectItem::UnnamedExpr(expr)) = select.projection.first_mut() {
+                    // Wrap the expression with MAX()
+                    let max_expr = Expr::Function(Function {
+                        name: ObjectName(vec![ObjectNamePart::Identifier(Ident::new("MAX"))]),
+                        args: FunctionArguments::List(FunctionArgumentList {
+                            args: vec![FunctionArg::Unnamed(FunctionArgExpr::Expr(
+                                expr.clone(),
+                            ))],
+                            duplicate_treatment: None,
+                            clauses: vec![],
+                        }),
+                        uses_odbc_syntax: false,
+                        parameters: FunctionArguments::None,
+                        filter: None,
+                        null_treatment: None,
+                        over: None,
+                        within_group: vec![],
+                    });
+                    *expr = max_expr;
+                }
+            }
+        }
+    }
+}
+
+impl VisitorMut for WrapCorrelatedSubqueriesWithMaxVisitor {
+    type Break = ();
+
+    fn pre_visit_expr(&mut self, expr: &mut Expr) -> ControlFlow<Self::Break> {
+        if let Expr::Case { conditions, else_result, .. } = expr {
+            // Process all result expressions in CASE WHEN branches
+            for case_when in conditions.iter_mut() {
+                if let Expr::Subquery(subquery) = &mut case_when.result {
+                    Self::wrap_select_with_max(subquery);
+                }
+            }
+
+            // Process ELSE branch if present
+            if let Some(else_expr) = else_result {
+                if let Expr::Subquery(subquery) = else_expr.as_mut() {
+                    Self::wrap_select_with_max(subquery);
+                }
+            }
+        }
+
+        ControlFlow::Continue(())
+    }
+}
+
+impl SqlStatementRewriteRule for WrapCorrelatedSubqueriesWithMax {
+    fn rewrite(&self, mut s: Statement) -> Statement {
+        let mut visitor = WrapCorrelatedSubqueriesWithMaxVisitor;
+        let _ = s.visit(&mut visitor);
+
+        s
+    }
+}
+
 /// `select version()` should return column named `version` not `version()`
 #[derive(Debug)]
 pub struct FixVersionColumnName;
@@ -1111,6 +1192,47 @@ mod tests {
         assert_rewrite!(&rules,
             "SELECT a.attname, pg_catalog.format_type(a.atttypid, a.atttypmod), (SELECT pg_catalog.pg_get_expr(d.adbin, d.adrelid, true) FROM pg_catalog.pg_attrdef d WHERE d.adrelid = a.attrelid AND d.adnum = a.attnum AND a.atthasdef), a.attnotnull, (SELECT c.collname FROM pg_catalog.pg_collation c, pg_catalog.pg_type t WHERE c.oid = a.attcollation AND t.oid = a.atttypid AND a.attcollation <> t.typcollation LIMIT 1) AS attcollation, a.attidentity, a.attgenerated FROM pg_catalog.pg_attribute a WHERE a.attrelid = '16384' AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum;",
             "SELECT a.attname, pg_catalog.format_type(a.atttypid, a.atttypmod), NULL, a.attnotnull, NULL AS attcollation, a.attidentity, a.attgenerated FROM pg_catalog.pg_attribute AS a WHERE a.attrelid = '16384' AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum");
+    }
+
+    #[test]
+    fn test_wrap_correlated_subqueries_with_max() {
+        let rules: Vec<Arc<dyn SqlStatementRewriteRule>> =
+            vec![Arc::new(WrapCorrelatedSubqueriesWithMax)];
+
+        // Exact RevealBI query
+        assert_rewrite!(
+            &rules,
+            "SELECT CASE WHEN typ.typtype='m' THEN (SELECT rngtypid FROM pg_range WHERE rngmultitypid = typ.oid) END",
+            "SELECT CASE WHEN typ.typtype = 'm' THEN (SELECT MAX(rngtypid) FROM pg_range WHERE rngmultitypid = typ.oid) END"
+        );
+
+        // WHEN clauses with subqueries
+        assert_rewrite!(
+            &rules,
+            "SELECT CASE WHEN typ.typtype='r' THEN rngsubtype WHEN typ.typtype='m' THEN (SELECT rngtypid FROM pg_range WHERE rngmultitypid = typ.oid) WHEN typ.typtype='d' THEN typ.typbasetype END AS elemtypoid",
+            "SELECT CASE WHEN typ.typtype = 'r' THEN rngsubtype WHEN typ.typtype = 'm' THEN (SELECT MAX(rngtypid) FROM pg_range WHERE rngmultitypid = typ.oid) WHEN typ.typtype = 'd' THEN typ.typbasetype END AS elemtypoid"
+        );
+
+        // CASE with ELSE containing subquery
+        assert_rewrite!(
+            &rules,
+            "SELECT CASE WHEN a='1' THEN (SELECT col1 FROM t1 WHERE t1.id = t2.id) ELSE (SELECT col2 FROM t1 WHERE t1.id = t2.id) END",
+            "SELECT CASE WHEN a = '1' THEN (SELECT MAX(col1) FROM t1 WHERE t1.id = t2.id) ELSE (SELECT MAX(col2) FROM t1 WHERE t1.id = t2.id) END"
+        );
+
+        // Only matching CASE expressions are affected
+        assert_rewrite!(
+            &rules,
+            "SELECT CASE WHEN a='1' THEN 'one' WHEN a='2' THEN 'two' ELSE 'other' END",
+            "SELECT CASE WHEN a = '1' THEN 'one' WHEN a = '2' THEN 'two' ELSE 'other' END"
+        );
+
+        // Nested CASE expressions  
+        assert_rewrite!(
+            &rules,
+            "SELECT CASE WHEN typ.typtype='r' THEN rngsubtype WHEN typ.typtype='m' THEN (SELECT rngtypid FROM pg_range WHERE rngmultitypid = typ.oid) WHEN typ.typtype='d' THEN typ.typbasetype END AS elemtypoid",
+            "SELECT CASE WHEN typ.typtype = 'r' THEN rngsubtype WHEN typ.typtype = 'm' THEN (SELECT MAX(rngtypid) FROM pg_range WHERE rngmultitypid = typ.oid) WHEN typ.typtype = 'd' THEN typ.typbasetype END AS elemtypoid"
+        );
     }
 
     #[test]

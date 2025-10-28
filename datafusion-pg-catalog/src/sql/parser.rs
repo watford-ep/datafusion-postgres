@@ -20,6 +20,7 @@ use super::rules::RemoveUnsupportedTypes;
 use super::rules::ResolveUnqualifiedIdentifer;
 use super::rules::RewriteArrayAnyAllOperation;
 use super::rules::SqlStatementRewriteRule;
+use super::rules::WrapCorrelatedSubqueriesWithMax;
 
 const BLACKLIST_SQL_MAPPING: &[(&str, &str)] = &[
     // pgcli startup query
@@ -219,6 +220,7 @@ impl PostgresCompatibilityParser {
                 Arc::new(FixArrayLiteral),
                 Arc::new(CurrentUserVariableToSessionUserFunctionCall),
                 Arc::new(FixCollate),
+                Arc::new(WrapCorrelatedSubqueriesWithMax),
                 Arc::new(RemoveSubqueryFromProjection),
                 Arc::new(FixVersionColumnName),
             ],
