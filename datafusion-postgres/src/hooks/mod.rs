@@ -20,7 +20,7 @@ pub trait QueryHook: Send + Sync {
         client: &mut (dyn ClientInfo + Send + Sync),
     ) -> Option<PgWireResult<Response>>;
 
-    /// called at extended query parse phase, for generating `LogicalPlan`from statement
+    /// called at extended query parse phase, for generating `LogicalPlan` from statement
     async fn handle_extended_parse_query(
         &self,
         sql: &Statement,

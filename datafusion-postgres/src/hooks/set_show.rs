@@ -288,7 +288,7 @@ where
             Some(mock_show_response("statement_timeout", &timeout_str).map(Response::Query))
         }
         ["transaction", "isolation", "level"] => {
-            Some(mock_show_response("transaction_isolation", "read_committed").map(Response::Query))
+            Some(mock_show_response("transaction_isolation", "read uncommitted").map(Response::Query))
         }
         ["bytea_output"]
         | ["datestyle"]
