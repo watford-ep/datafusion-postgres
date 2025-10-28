@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::{Arc, Mutex}};
 
 use datafusion::prelude::SessionContext;
 use datafusion_pg_catalog::pg_catalog::setup_pg_catalog;
@@ -28,6 +28,8 @@ pub fn setup_handlers() -> DfSessionService {
 pub struct MockClient {
     metadata: HashMap<String, String>,
     portal_store: HashMap<String, String>,
+    /// Captured backend messages sent by handlers (RowDescriptions, DataRow, CommandComplete, etc.)
+    messages: Arc<Mutex<Vec<pgwire::messages::PgWireBackendMessage>>>,
 }
 
 impl MockClient {
@@ -38,6 +40,21 @@ impl MockClient {
         MockClient {
             metadata,
             portal_store: HashMap::default(),
+            messages: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+}
+
+impl MockClient {
+    /// Return a clone of the Arc to the captured messages buffer so callers can inspect it.
+    pub fn messages(&self) -> Arc<Mutex<Vec<pgwire::messages::PgWireBackendMessage>>> {
+        Arc::clone(&self.messages)
+    }
+
+    /// Clear captured messages
+    pub fn clear_messages(&self) {
+        if let Ok(mut m) = self.messages.lock() {
+            m.clear();
         }
     }
 }
@@ -111,8 +128,12 @@ impl Sink<PgWireBackendMessage> for MockClient {
 
     fn start_send(
         self: std::pin::Pin<&mut Self>,
-        _item: PgWireBackendMessage,
+        item: PgWireBackendMessage,
     ) -> Result<(), Self::Error> {
+        // Push the message into the captured buffer for test inspection.
+        if let Ok(mut msgs) = self.get_mut().messages.lock() {
+            msgs.push(item);
+        }
         Ok(())
     }
 
