@@ -72,8 +72,26 @@ impl<C: CatalogInfo> PgNamespaceTable<C> {
                     let schema_oid = if schema_name == "pg_catalog" {
                         let reserved_oid: u32 = 11;
 
-                        let collision = oid_cache.values().any(|v| *v == reserved_oid);
-                        if collision {
+                        // A collision is only an error if the reserved OID is already
+                        // assigned to an object that is not a pg_catalog schema. If
+                        // the OID is already assigned to a Schema whose name is
+                        // "pg_catalog" then it's fine (another catalog's
+                        // pg_catalog may have already claimed it).
+                        let collision_bad = oid_cache.iter().any(|(k, v)| {
+                            if *v != reserved_oid {
+                                return false;
+                            }
+
+                            match k {
+                                // If it's a schema entry named "pg_catalog", allow it.
+                                OidCacheKey::Schema(_, schema_name) if schema_name == "pg_catalog" => false,
+                                // Anything else (including tables, catalogs, or
+                                // schemas with different names) is a bad collision.
+                                _ => true,
+                            }
+                        });
+
+                        if collision_bad {
                             return Err(datafusion::error::DataFusionError::Execution(format!(
                                 "reserved OID {} already assigned to another object; cannot assign to pg_catalog",
                                 reserved_oid
