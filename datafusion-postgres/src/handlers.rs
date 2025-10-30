@@ -318,7 +318,7 @@ impl SimpleQueryHandler for DfSessionService {
                     .await
                 {
                     results.push(result?);
-                    break 'stmt;
+                    continue 'stmt;
                 }
             }
 
