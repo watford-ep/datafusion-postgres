@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use datafusion::arrow::array::{
-    as_boolean_array, ArrayRef, AsArray, BooleanBuilder, Int32Builder, RecordBatch, StringArray,
-    StringBuilder,
+    as_boolean_array, ArrayRef, AsArray, BooleanBuilder, Int32Builder, NullBuilder, RecordBatch,
+    StringArray, StringBuilder,
 };
 use datafusion::arrow::datatypes::{DataType, Field, Int32Type, SchemaRef};
 use datafusion::arrow::ipc::reader::FileReader;
@@ -1370,6 +1370,23 @@ pub fn create_pg_get_constraintdef() -> ScalarUDF {
     )
 }
 
+pub fn create_pg_advisory_unlock_all_udf() -> ScalarUDF {
+    let func = move |_args: &[ColumnarValue]| {
+        let mut builder = NullBuilder::new();
+        builder.append_null();
+        let array: ArrayRef = Arc::new(builder.finish());
+        Ok(ColumnarValue::Array(array))
+    };
+
+    create_udf(
+        "pg_advisory_unlock_all",
+        vec![],
+        DataType::Null,
+        Volatility::Stable,
+        Arc::new(func),
+    )
+}
+
 /// Install pg_catalog and postgres UDFs to current `SessionContext`
 pub fn setup_pg_catalog<P>(
     session_context: &SessionContext,
@@ -1425,6 +1442,7 @@ where
     session_context.register_udf(create_pg_total_relation_size_udf());
     session_context.register_udf(create_pg_stat_get_numscans());
     session_context.register_udf(create_pg_get_constraintdef());
+    session_context.register_udf(create_pg_advisory_unlock_all_udf());
 
     Ok(())
 }

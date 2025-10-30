@@ -25,6 +25,10 @@ use pgwire::messages::response::TransactionStatus;
 
 use crate::auth::AuthManager;
 use crate::client;
+use crate::hooks::close::CloseHook;
+use crate::hooks::discard::DiscardHook;
+use crate::hooks::listen_unlisten::ListenUnlistenHook;
+use crate::hooks::reset::ResetHook;
 use crate::hooks::set_show::SetShowHook;
 use crate::hooks::QueryHook;
 use arrow_pg::datatypes::df;
@@ -106,8 +110,13 @@ impl DfSessionService {
         session_context: Arc<SessionContext>,
         auth_manager: Arc<AuthManager>,
     ) -> DfSessionService {
-        let hooks: Vec<Arc<dyn QueryHook>> = vec![Arc::new(SetShowHook)];
-        Self::new_with_hooks(session_context, auth_manager, hooks)
+        let hooks: Vec<Arc<dyn QueryHook>> = vec![
+            Arc::new(CloseHook),
+            Arc::new(DiscardHook),
+            Arc::new(ListenUnlistenHook),
+            Arc::new(ResetHook),
+            Arc::new(SetShowHook),
+        ];
     }
 
     pub fn new_with_hooks(

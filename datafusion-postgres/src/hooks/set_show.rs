@@ -177,6 +177,7 @@ where
             client::set_timezone(client, Some(tz));
             Some(Ok(Response::Execution(Tag::new("SET"))))
         }
+        Set::SetSessionParam(_) => Some(Ok(Response::Execution(Tag::new("SET")))),
         _ => {
             // pass SET query to datafusion
             let query = statement.to_string();
@@ -235,9 +236,9 @@ where
             };
             Some(mock_show_response("statement_timeout", &timeout_str).map(Response::Query))
         }
-        ["transaction", "isolation", "level"] => {
-            Some(mock_show_response("transaction_isolation", "read uncommitted").map(Response::Query))
-        }
+        ["transaction", "isolation", "level"] => Some(
+            mock_show_response("transaction_isolation", "read uncommitted").map(Response::Query),
+        ),
         _ => {
             info!("Unsupported show statement: {}", statement);
             Some(mock_show_response("unsupported_show_statement", "").map(Response::Query))
