@@ -338,13 +338,14 @@ impl VisitorMut for RemoveUnsupportedTypesVisitor<'_> {
     fn pre_visit_expr(&mut self, expr: &mut Expr) -> ControlFlow<Self::Break> {
         match expr {
             // This is the key part: identify constants with type annotations.
-            Expr::TypedString { value, data_type } => {
+            Expr::TypedString(typed_string) => {
                 if self
                     .unsupported_types
-                    .contains(data_type.to_string().to_lowercase().as_str())
+                    .contains(typed_string.data_type.to_string().to_lowercase().as_str())
                 {
-                    *expr =
-                        Expr::Value(Value::SingleQuotedString(value.to_string()).with_empty_span());
+                    *expr = Expr::Value(
+                        Value::SingleQuotedString(typed_string.value.to_string()).with_empty_span(),
+                    );
                 }
             }
             Expr::Cast {
@@ -854,6 +855,47 @@ impl SqlStatementRewriteRule for RemoveSubqueryFromProjection {
     }
 }
 
+/// Strip database/user name from 3-part table names
+///
+/// PostgreSQL allows fully qualified table names in the form:
+/// `database.schema.table` or `user.schema.table`. DataFusion doesn't support
+/// this format, so we strip the first part to get `schema.table`.
+///
+/// For example:
+/// - `"postgres"."public"."officer_profile"` → `"public"."officer_profile"`
+/// - `mydb.public.users` → `public.users`
+#[derive(Debug)]
+pub struct StripDatabaseFromTableName;
+
+struct StripDatabaseFromTableNameVisitor;
+
+impl VisitorMut for StripDatabaseFromTableNameVisitor {
+    type Break = ();
+
+    fn pre_visit_table_factor(
+        &mut self,
+        table_factor: &mut TableFactor,
+    ) -> ControlFlow<Self::Break> {
+        if let TableFactor::Table { name, .. } = table_factor {
+            // If we have 3 or more parts (database.schema.table), strip the first part
+            if name.0.len() >= 3 {
+                *name = ObjectName(name.0[1..].to_vec());
+            }
+        }
+
+        ControlFlow::Continue(())
+    }
+}
+
+impl SqlStatementRewriteRule for StripDatabaseFromTableName {
+    fn rewrite(&self, mut s: Statement) -> Statement {
+        let mut visitor = StripDatabaseFromTableNameVisitor;
+
+        let _ = s.visit(&mut visitor);
+        s
+    }
+}
+
 /// Wrap correlated scalar subqueries with MAX() aggregation
 ///
 /// DataFusion requires correlated scalar subqueries to be aggregated to ensure
@@ -882,9 +924,7 @@ impl WrapCorrelatedSubqueriesWithMaxVisitor {
                     let max_expr = Expr::Function(Function {
                         name: ObjectName(vec![ObjectNamePart::Identifier(Ident::new("MAX"))]),
                         args: FunctionArguments::List(FunctionArgumentList {
-                            args: vec![FunctionArg::Unnamed(FunctionArgExpr::Expr(
-                                expr.clone(),
-                            ))],
+                            args: vec![FunctionArg::Unnamed(FunctionArgExpr::Expr(expr.clone()))],
                             duplicate_treatment: None,
                             clauses: vec![],
                         }),
@@ -906,7 +946,12 @@ impl VisitorMut for WrapCorrelatedSubqueriesWithMaxVisitor {
     type Break = ();
 
     fn pre_visit_expr(&mut self, expr: &mut Expr) -> ControlFlow<Self::Break> {
-        if let Expr::Case { conditions, else_result, .. } = expr {
+        if let Expr::Case {
+            conditions,
+            else_result,
+            ..
+        } = expr
+        {
             // Process all result expressions in CASE WHEN branches
             for case_when in conditions.iter_mut() {
                 if let Expr::Subquery(subquery) = &mut case_when.result {
@@ -1269,7 +1314,7 @@ mod tests {
             "SELECT CASE WHEN a = '1' THEN 'one' WHEN a = '2' THEN 'two' ELSE 'other' END"
         );
 
-        // Nested CASE expressions  
+        // Nested CASE expressions
         assert_rewrite!(
             &rules,
             "SELECT CASE WHEN typ.typtype='r' THEN rngsubtype WHEN typ.typtype='m' THEN (SELECT rngtypid FROM pg_range WHERE rngmultitypid = typ.oid) WHEN typ.typtype='d' THEN typ.typbasetype END AS elemtypoid",
@@ -1287,6 +1332,43 @@ mod tests {
         assert_rewrite!(&rules, "SELECT version() as foo", "SELECT version() AS foo");
         assert_rewrite!(&rules, "SELECT version(foo)", "SELECT version(foo)");
         assert_rewrite!(&rules, "SELECT foo.version()", "SELECT foo.version()");
+    }
+
+    #[test]
+    fn test_strip_database_from_table_name() {
+        let rules: Vec<Arc<dyn SqlStatementRewriteRule>> =
+            vec![Arc::new(StripDatabaseFromTableName)];
+
+        // 3-part table name with quotes
+        assert_rewrite!(
+            &rules,
+            r#"SELECT * FROM "postgres"."public"."officer_profile" LIMIT 1"#,
+            r#"SELECT * FROM "public"."officer_profile" LIMIT 1"#
+        );
+
+        // 3-part table name without quotes
+        assert_rewrite!(
+            &rules,
+            "SELECT * FROM mydb.public.users LIMIT 1",
+            "SELECT * FROM public.users LIMIT 1"
+        );
+
+        // 2-part table name should not be changed
+        assert_rewrite!(
+            &rules,
+            "SELECT * FROM public.users",
+            "SELECT * FROM public.users"
+        );
+
+        // Single table name should not be changed
+        assert_rewrite!(&rules, "SELECT * FROM users", "SELECT * FROM users");
+
+        // Multiple tables with 3-part names
+        assert_rewrite!(
+            &rules,
+            r#"SELECT * FROM "postgres"."public"."table1" t1 JOIN "postgres"."public"."table2" t2 ON t1.id = t2.id"#,
+            r#"SELECT * FROM "public"."table1" AS t1 JOIN "public"."table2" AS t2 ON t1.id = t2.id"#
+        );
     }
 
     #[test]

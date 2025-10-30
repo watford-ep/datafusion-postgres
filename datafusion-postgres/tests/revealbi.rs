@@ -66,7 +66,6 @@ const REVEALBI_QUERIES: &[&str] = &[
     ORDER BY oid, enumsortorder",
 ];
 
-
 #[tokio::test]
 pub async fn test_revealbi_startup_sql() {
     env_logger::init();
@@ -79,4 +78,3 @@ pub async fn test_revealbi_startup_sql() {
             .unwrap_or_else(|e| panic!("failed to run sql: {query}\n{e}"));
     }
 }
-
