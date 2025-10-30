@@ -64,6 +64,7 @@ const REVEALBI_QUERIES: &[&str] = &[
     FROM pg_enum
     JOIN pg_type ON pg_type.oid=enumtypid
     ORDER BY oid, enumsortorder",
+    "SET SESSION AUTHORIZATION DEFAULT;RESET ALL;CLOSE ALL;UNLISTEN *;SELECT pg_advisory_unlock_all();DISCARD SEQUENCES;DISCARD TEMP",
 ];
 
 #[tokio::test]
