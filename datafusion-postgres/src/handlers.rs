@@ -309,7 +309,7 @@ impl SimpleQueryHandler for DfSessionService {
                     .await
                 {
                     results.push(result?);
-                    break 'stmt;
+                    continue 'stmt;
                 }
             }
 
@@ -761,5 +761,34 @@ mod tests {
         // Hook should not intercept
         let result = hook.handle_simple_query(stmt, &ctx, &mut client).await;
         assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_multiple_statements_with_hook_continue() {
+        // Bug #227: when a hook returned a result, the code used `break 'stmt`
+        // which would exit the entire statement loop, preventing subsequent statements
+        // from being processed.
+        let session_context = Arc::new(SessionContext::new());
+        let auth_manager = Arc::new(AuthManager::new());
+
+        let hooks: Vec<Arc<dyn QueryHook>> = vec![Arc::new(TestHook)];
+        let service = DfSessionService::new_with_hooks(session_context, auth_manager, hooks);
+
+        let mut client = MockClient::new();
+
+        // Mix of queries with hooks and those without
+        let query = "SELECT magic; SELECT 1; SELECT magic; SELECT 1";
+
+        let results =
+            <DfSessionService as SimpleQueryHandler>::do_query(&service, &mut client, query)
+                .await
+                .unwrap();
+
+        assert_eq!(results.len(), 4, "Expected 4 responses");
+
+        assert!(matches!(results[0], Response::EmptyQuery));
+        assert!(matches!(results[1], Response::Query(_)));
+        assert!(matches!(results[2], Response::EmptyQuery));
+        assert!(matches!(results[3], Response::Query(_)));
     }
 }
